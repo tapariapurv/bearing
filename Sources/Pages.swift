@@ -1210,8 +1210,6 @@ struct ConnectSettings: View {
     @State private var cal = CalendarService.shared
     @State private var google = GoogleCalendar.shared
     @State private var token = ""
-    @State private var googleID = Keychain.get("google.clientID")
-    @State private var googleSecret = ""
     var body: some View {
         @Bindable var s = store
         Form {
@@ -1230,15 +1228,9 @@ struct ConnectSettings: View {
                     LabeledContent("Status", value: google.status.isEmpty ? "Connecting…" : google.status)
                     HStack { Button("Sync Now") { Task { await google.sync() } }; Button("Disconnect") { google.disconnect() } }
                 } else {
-                    TextField("Client ID", text: $googleID, prompt: Text("Client ID")).field()
-                    SecureField("Client secret", text: $googleSecret, prompt: Text("Client secret")).field()
-                    Text("Free, and only once: in Google Cloud Console, create a project, enable the Google Calendar API, set up the OAuth consent screen with yourself as a test user, then create an OAuth client of type Desktop app and paste its ID and secret here. Publish the consent screen so sign-in doesn't expire after 7 days.").font(.caption).foregroundStyle(.secondary)
-                    HStack {
-                        Link("Open Google Cloud Console", destination: URL(string: "https://console.cloud.google.com/apis/credentials")!).font(.callout)
-                        Spacer()
-                        Button("Connect Google") { Task { await google.connect(clientID: googleID, secret: googleSecret); googleSecret = "" } }
-                            .buttonStyle(PillButton()).disabled(googleID.isEmpty || googleSecret.isEmpty)
-                    }
+                    Button("Sign in with Google") { Task { await google.connect() } }
+                        .buttonStyle(PillButton()).disabled(GoogleClient.id.isEmpty)
+                    if GoogleClient.id.isEmpty { Text("This build has no Google client. See the README.").font(.caption).foregroundStyle(.secondary) }
                     if !google.status.isEmpty { Text(google.status).font(.caption).foregroundStyle(.secondary) }
                 }
             }

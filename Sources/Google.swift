@@ -2,8 +2,8 @@ import SwiftUI
 import Network
 import CryptoKit
 
-// Google Calendar over its REST API. Each person uses their own free OAuth client,
-// since a client shipped in a public repo can't stay secret or stay under Google's quota.
+// Google Calendar over its REST API. build.sh generates GoogleClient from google-client.local,
+// which stays out of the public repo. Google treats a desktop app's secret as non-confidential.
 
 struct GEvent: Hashable {
     var id: String, cal: String, title: String, start: Date, end: Date, allDay: Bool
@@ -79,8 +79,8 @@ struct GoogleError: LocalizedError { var code: Int, text: String; var errorDescr
         return Data(f.map { "\($0.key)=\($0.value.addingPercentEncoding(withAllowedCharacters: ok) ?? "")" }.joined(separator: "&").utf8)
     }
 
-    func connect(clientID: String, secret: String) async {
-        let id = clientID.trimmingCharacters(in: .whitespacesAndNewlines), sec = secret.trimmingCharacters(in: .whitespacesAndNewlines)
+    func connect() async {
+        let id = GoogleClient.id
         guard let server = try? Loopback() else { status = "Couldn't open a local port for sign-in."; return }
         status = "Finish signing in with Google in your browser…"
         let verifier = random(), state = random()
@@ -98,10 +98,10 @@ struct GoogleError: LocalizedError { var code: Int, text: String; var errorDescr
         guard let got else { status = "Sign-in timed out. Try again."; return }
         guard got["state"] == state, let code = got["code"] else { status = "Google sign-in didn't finish: \(got["error"] ?? "state mismatch")."; return }
         do {
-            let j = try await tokenCall(["code": code, "client_id": id, "client_secret": sec, "code_verifier": verifier,
+            let j = try await tokenCall(["code": code, "client_id": id, "client_secret": GoogleClient.secret, "code_verifier": verifier,
                                          "grant_type": "authorization_code", "redirect_uri": "http://127.0.0.1:\(port.value)/"])
             guard let refresh = j["refresh_token"] as? String else { status = "Google didn't return a refresh token. Try again."; return }
-            Keychain.set("google.clientID", id); Keychain.set("google.secret", sec); Keychain.set("google.refresh", refresh)
+            Keychain.set("google.refresh", refresh)
             connected = true
             start()
         } catch { status = error.localizedDescription }
@@ -133,11 +133,11 @@ struct GoogleError: LocalizedError { var code: Int, text: String; var errorDescr
     private func token() async throws -> String {
         if !access.isEmpty, expiry > Date() { return access }
         do {
-            _ = try await tokenCall(["refresh_token": Keychain.get("google.refresh"), "client_id": Keychain.get("google.clientID"),
-                                     "client_secret": Keychain.get("google.secret"), "grant_type": "refresh_token"])
+            _ = try await tokenCall(["refresh_token": Keychain.get("google.refresh"), "client_id": GoogleClient.id,
+                                     "client_secret": GoogleClient.secret, "grant_type": "refresh_token"])
             return access
         } catch let e as GoogleError where e.code == 400 || e.code == 401 {
-            connected = false // Google test-mode sign-ins last 7 days; see the README.
+            connected = false
             status = "Google sign-in expired. Connect again."
             throw e
         }

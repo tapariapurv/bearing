@@ -44,12 +44,16 @@ The coach needs a model, which you choose in Settings. To keep it free, run one 
 
 ## Connect Google Calendar
 
-Apple Calendar only needs your permission. Google needs your own free OAuth client, so nothing goes through a Bearing server:
+In Settings > Connections, click **Sign in with Google**. Events go directly between your Mac and Google, with no Bearing server. See the [privacy policy](PRIVACY.md).
 
-1. In the [Google Cloud console](https://console.cloud.google.com), create a project and enable the Google Calendar API.
-2. Set up the OAuth consent screen, then publish it. In testing mode, Google ends your sign-in after 7 days.
-3. Create an OAuth client of type **Desktop app**.
-4. Paste its client ID and secret into Bearing's Settings > Connections and sign in. Google warns that the app is unverified, which is expected for your own client.
+Google shows an "unverified app" warning until it has reviewed Bearing. Click **Advanced**, then **Go to Bearing**. Sign-ins are limited to 100 people until then.
+
+Building from source? Create a free Desktop app OAuth client in the [Google Cloud console](https://console.cloud.google.com), then put it in `google-client.local` next to `build.sh`:
+
+```
+GOOGLE_ID=your-client-id
+GOOGLE_SECRET=your-client-secret
+```
 
 ## Limits
 

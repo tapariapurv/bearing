@@ -3,11 +3,15 @@
 # ./build.sh [--open] [--dmg] [--test]
 set -euo pipefail
 cd "$(dirname "$0")"
-V=1.0.0
+V=1.1.0
 A="$HOME/Applications/Bearing.app"
 B="build/Bearing"
 mkdir -p build
-swiftc -O -parse-as-library -swift-version 5 -target arm64-apple-macos26 Sources/*.swift -o "$B"
+# Google sign-in client. Kept out of the public repo, so only builds with google-client.local can sign in.
+GOOGLE_ID=""; GOOGLE_SECRET=""
+[ -f google-client.local ] && . ./google-client.local
+echo "enum GoogleClient { static let id = \"$GOOGLE_ID\", secret = \"$GOOGLE_SECRET\" }" > build/GoogleClient.swift
+swiftc -O -parse-as-library -swift-version 5 -target arm64-apple-macos26 Sources/*.swift build/GoogleClient.swift -o "$B"
 
 rm -rf "$A"; mkdir -p "$A/Contents/MacOS" "$A/Contents/Resources"
 cp "$B" "$A/Contents/MacOS/Bearing"
