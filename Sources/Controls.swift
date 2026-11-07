@@ -2,7 +2,7 @@ import SwiftUI
 
 // Bearing's own controls. Set once at the root, so screens don't restyle anything.
 
-extension Color { static let onBrand = dyn(0x082F49, 0x082F49) }
+extension Color { static let onBrand = dyn(0xFFFFFF, 0x111114) }
 extension EnvironmentValues { @Entry var fillRow = false }
 
 extension View {

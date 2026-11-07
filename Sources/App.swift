@@ -548,7 +548,7 @@ final class GStub: URLProtocol, @unchecked Sendable {
     private static var panel: NSPanel?
     static func show() {
         guard panel == nil else { return }
-        let p = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 300, height: 48), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        let p = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 320, height: 48), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         p.level = .floating
         p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         p.hidesOnDeactivate = false
@@ -557,7 +557,7 @@ final class GStub: URLProtocol, @unchecked Sendable {
         p.backgroundColor = .clear
         p.hasShadow = true
         p.contentView = NSHostingView(rootView: FloatingTimerView())
-        if let f = NSScreen.main?.visibleFrame { p.setFrameOrigin(NSPoint(x: f.midX - 150, y: f.maxY - 60)) }
+        if let f = NSScreen.main?.visibleFrame { p.setFrameOrigin(NSPoint(x: f.midX - 160, y: f.maxY - 60)) }
         p.orderFrontRegardless()
         panel = p
     }
@@ -575,18 +575,33 @@ private struct FloatingTimerView: View {
         return focus.title.isEmpty ? "Focus" : focus.title
     }
     var body: some View {
-        HStack(spacing: 8) {
-            Circle().fill(tint).frame(width: 10, height: 10)
-            Text(label).font(.callout.weight(.medium)).lineLimit(1)
+        let music = Music.shared, store = Store.shared
+        HStack(spacing: 6) {
+            ZStack {
+                Circle().stroke(tint.wash, lineWidth: 3)
+                Circle().trim(from: 0, to: focus.mode == .stopwatch ? 1 : focus.progress).stroke(tint, style: .init(lineWidth: 3, lineCap: .round)).rotationEffect(.degrees(-90))
+                Button { focus.togglePause() } label: { Image(systemName: focus.paused ? "play.fill" : "pause.fill").font(.system(size: 9, weight: .bold)).frame(width: 22, height: 22).contentShape(.circle) }
+                    .buttonStyle(.plain).help(focus.paused ? "Resume" : "Pause").accessibilityLabel(focus.paused ? "Resume" : "Pause")
+            }.frame(width: 26, height: 26)
+            Text(label).font(.callout.weight(.medium)).lineLimit(1).padding(.leading, 4)
             Spacer(minLength: 4)
-            Text(focus.display).font(.system(.body, design: .rounded).weight(.semibold)).monospacedDigit().foregroundStyle(tint)
-            control(focus.paused ? "play.fill" : "pause.fill", focus.paused ? "Resume" : "Pause") { focus.togglePause() }
+            Text(focus.display).font(.system(.callout, design: .rounded).weight(.semibold)).monospacedDigit()
+            Menu {
+                ForEach(music.categories, id: \.self) { c in
+                    Button { store.data.prefs.musicSource = .library; store.data.prefs.musicCategory = c; music.reload(); music.play() } label: {
+                        if music.playing && store.data.prefs.musicSource == .library && store.data.prefs.musicCategory == c { Label(c, systemImage: "checkmark") } else { Text(c) }
+                    }
+                }
+                Divider()
+                Button(music.playing ? "Pause Music" : "Play Music") { music.playing ? music.pause() : music.play() }
+            } label: { Image(systemName: "headphones") }
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 24).help("Music").accessibilityLabel("Music")
             if focus.exitAt != nil { control("arrow.uturn.backward", "Keep going") { focus.cancelExit() } }
-            else { control("stop.fill", "End session") { focus.requestStop() } }
-            control("minus", "Hide until the next session") { FloatingTimer.hide() }
+            else { control("checkmark", "Finish session") { focus.requestStop() } }
+            control("chevron.down", "Hide until the next session") { FloatingTimer.hide() }
         }
-        .padding(.horizontal, 14)
-        .frame(width: 300, height: 48)
+        .padding(.leading, 11).padding(.trailing, 10)
+        .frame(width: 320, height: 48)
         .background(.regularMaterial, in: Capsule())
         .overlay(Capsule().strokeBorder(.separator))
     }

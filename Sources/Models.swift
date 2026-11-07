@@ -155,9 +155,10 @@ let goalPalette = [dyn(0x38BDF8, 0x7DD3FC), dyn(0xEF4444, 0xF87171), dyn(0x14B8A
 let goalColorNames = ["Sky", "Coral", "Teal", "Pink", "Green", "Indigo", "Amber", "Violet"]
 func goalColor(_ i: Int) -> Color { goalPalette[abs(i) % 8] }
 extension Color {
-    static let brand = goalPalette[0]
-    static let page = dyn(0xF5F6F8, 0x15161A)
-    static let surface = dyn(0xFFFFFF, 0x1F2126)
+    /// Ink: black pills and selection, like a pen on white paper.
+    static let brand = dyn(0x111114, 0xF4F4F5)
+    static let page = dyn(0xFFFFFF, 0x161618)
+    static let surface = dyn(0xFFFFFF, 0x1F2023)
     /// Soft fill behind colored content, and readable text to put on it.
     var wash: Color { opacity(0.16) }
     var ink: Color { mix(with: .primary, by: 0.4) }

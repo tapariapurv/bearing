@@ -13,8 +13,8 @@ extension View {
                 if let accent { accent.frame(width: 4) }
             }.clipShape(.rect(cornerRadius: radius))
         }
-        .overlay(RoundedRectangle(cornerRadius: radius).strokeBorder(Color.primary.opacity(0.08)))
-        .shadow(color: .black.opacity(0.04), radius: 6, y: 2)
+        .overlay(RoundedRectangle(cornerRadius: radius).strokeBorder(Color.primary.opacity(0.07)))
+        .shadow(color: .black.opacity(0.035), radius: 10, y: 3)
     }
 }
 struct PillButton: ButtonStyle {
@@ -25,7 +25,7 @@ struct PillButton: ButtonStyle {
         let big = size == .large
         c.label.font(big ? .body.weight(.semibold) : .callout.weight(.semibold))
             .foregroundStyle(color == nil ? Color.onBrand : .white)
-            .padding(.horizontal, big ? 20 : 12).padding(.vertical, big ? 10 : 5)
+            .padding(.horizontal, big ? 22 : 14).padding(.vertical, big ? 11 : 6)
             .background(color ?? .brand, in: .capsule).contentShape(.capsule)
             .opacity(enabled ? 1 : 0.4)
             .scaleEffect(c.isPressed ? 0.97 : 1).animation(.easeOut(duration: 0.1), value: c.isPressed)
@@ -75,8 +75,8 @@ struct Card<C: View>: View {
             if let title { Text(title).font(.headline) }
             content
         }
-        .padding(18).frame(maxWidth: .infinity, alignment: .leading)
-        .surface(14, accent: accent)
+        .padding(20).frame(maxWidth: .infinity, alignment: .leading)
+        .surface(18, accent: accent)
     }
 }
 struct Pill: View {
@@ -858,8 +858,12 @@ struct CoachPage: View {
                         ForEach(store.data.chat) { m in
                             HStack {
                                 if m.role == "user" { Spacer(minLength: 80) }
-                                Text(m.text.isEmpty ? "…" : m.text).textSelection(.enabled).padding(10)
-                                    .background(m.role == "user" ? Color.brand.opacity(0.18) : Color.secondary.opacity(0.1), in: .rect(cornerRadius: 10))
+                                if m.role == "user" {
+                                    Text(m.text).textSelection(.enabled).foregroundStyle(Color.onBrand).padding(.horizontal, 14).padding(.vertical, 9)
+                                        .background(Color.brand, in: .rect(cornerRadius: 18))
+                                } else {
+                                    Text(m.text.isEmpty ? "…" : m.text).textSelection(.enabled).lineSpacing(3)
+                                }
                                 if m.role != "user" { Spacer(minLength: 80) }
                             }.id(m.id)
                         }
@@ -868,13 +872,16 @@ struct CoachPage: View {
                 .onChange(of: store.data.chat.last?.text) { if let id = store.data.chat.last?.id { proxy.scrollTo(id, anchor: .bottom) } }
             }
             ErrorText(text: error).padding(.horizontal, 20)
-            HStack(alignment: .bottom) {
-                Button { toggleVoice() } label: { Image(systemName: voice.recording ? "stop.circle.fill" : "mic").foregroundStyle(voice.recording ? .red : .primary) }
-                    .accessibilityLabel(voice.recording ? "Stop recording" : "Record a message").disabled(transcribing)
-                TextField(transcribing ? "Transcribing…" : "Message your coach", text: $nav.coachDraft, axis: .vertical).field().lineLimit(1...5)
-                    .onSubmit { send() }
-                Button("Send") { send() }.buttonStyle(PillButton()).disabled(busy || nav.coachDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }.padding(14).frame(maxWidth: 820)
+            HStack(alignment: .bottom, spacing: 8) {
+                TextField(transcribing ? "Transcribing…" : "Ask your coach…", text: $nav.coachDraft, axis: .vertical).textFieldStyle(.plain).lineLimit(1...5)
+                    .onSubmit { send() }.padding(.vertical, 6)
+                Button { toggleVoice() } label: { Image(systemName: voice.recording ? "stop.circle.fill" : "mic").foregroundStyle(voice.recording ? .red : .secondary).frame(width: 28, height: 28) }
+                    .buttonStyle(.plain).accessibilityLabel(voice.recording ? "Stop recording" : "Record a message").disabled(transcribing)
+                Button { send() } label: { Image(systemName: "arrow.up").font(.callout.weight(.bold)).foregroundStyle(Color.onBrand).frame(width: 28, height: 28).background(Color.brand, in: .circle) }
+                    .buttonStyle(.plain).accessibilityLabel("Send").disabled(busy || nav.coachDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            .padding(.leading, 16).padding(.trailing, 8).padding(.vertical, 6).surface(22)
+            .padding(14).frame(maxWidth: 780)
         }
         .toolbar {
             Button("Turn into Goals") { adopt() }.disabled(store.data.chat.isEmpty || busy)
