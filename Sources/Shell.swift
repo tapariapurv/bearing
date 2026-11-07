@@ -270,7 +270,7 @@ struct DayPanel: View {
                         Circle().fill(c).frame(width: 7, height: 7)
                         VStack(alignment: .leading, spacing: 1) {
                             Text(s.title).font(.callout.weight(.medium)).lineLimit(1)
-                            Text("\(s.start.clock) – \(s.start.addingTimeInterval(s.seconds).clock)").font(.caption).foregroundStyle(.secondary)
+                            Text("\(hhmm(s.start)) - \(hhmm(s.start.addingTimeInterval(s.seconds)))").font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
                         if let a = s.activity { Text("\(Tracker.breakdown(a, intention: s.title).score)%").font(.callout.weight(.semibold)).monospacedDigit() }

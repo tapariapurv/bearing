@@ -174,67 +174,6 @@ struct CoachBrief: View {
 
 // MARK: - Today
 
-struct TodayPage: View {
-    @State private var store = Store.shared
-    @State private var focus = Focus.shared
-    @State private var cal = CalendarService.shared
-    var body: some View {
-        let d = store.data, today = Date()
-        let sessions = d.sessions.filter { Calendar.current.isDateInToday($0.start) }
-        let blocks = store.blocks(on: today)
-        let events = cal.events(from: today.startOfDay, to: today.startOfDay.adding(days: 1)).filter { !$0.allDay }
-        Scroll {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(today.formatted(.dateTime.weekday(.wide).month(.wide).day())).font(.largeTitle.weight(.bold))
-                Text("\(d.seasonName): day \(store.seasonDay) of \(d.seasonWeeks * 7)").foregroundStyle(.secondary)
-                GoalBar(value: Double(store.seasonDay) / Double(max(1, d.seasonWeeks * 7)), color: .brand).frame(maxWidth: 320).padding(.top, 4)
-                DailyLoop().padding(.top, 10)
-            }
-            GoalStrip()
-            HStack(alignment: .top, spacing: 16) {
-                Card(title: "Today's Plan") {
-                    HStack(alignment: .top, spacing: 16) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            if blocks.isEmpty && events.isEmpty {
-                                Text("Nothing blocked yet.").foregroundStyle(.secondary)
-                                Button("Plan the Week") { Nav.shared.page = .week }
-                            }
-                            ForEach(events) { e in
-                                PlanRow(title: e.title, time: "\(e.start.clock) to \(e.end.clock)", color: e.color) { EmptyView() }
-                            }
-                            ForEach(blocks) { b in
-                                PlanRow(title: b.title, time: "\(b.start.clock) to \(b.end.clock)", color: store.goal(b.goalID).map { goalColor($0.color) } ?? .gray) {
-                                    if !focus.active && b.end > Date() { Button("Start Focus") { focus.begin(title: b.title, goal: b.goalID, task: b.taskID); Nav.shared.page = .focus } }
-                                }
-                            }
-                        }.frame(maxWidth: .infinity, alignment: .leading)
-                        ActualColumn().frame(width: 220)
-                    }
-                }
-                VStack(spacing: 16) {
-                    Card(title: "Focused Today") {
-                        Text(hm(sessions.reduce(0) { $0 + $1.seconds })).font(.system(size: 34, weight: .bold, design: .rounded)).monospacedDigit().foregroundStyle(Color.brand.ink)
-                        Text(sessions.count == 1 ? "1 session" : "\(sessions.count) sessions").foregroundStyle(.secondary).font(.caption)
-                    }
-                    Card(title: "Next Tasks") {
-                        let open = d.tasks.filter { !$0.done }.sorted { ($0.due ?? .distantFuture, -$0.priority) < ($1.due ?? .distantFuture, -$1.priority) }.prefix(4)
-                        if open.isEmpty { Text("All clear.").foregroundStyle(.secondary) }
-                        ForEach(Array(open)) { t in
-                            HStack(spacing: 7) {
-                                Circle().fill(store.goal(t.goalID).map { goalColor($0.color) } ?? Color.secondary.opacity(0.4)).frame(width: 7, height: 7)
-                                Text(t.title).lineLimit(1)
-                            }
-                        }
-                    }
-                }.frame(width: 280)
-            }
-            CoachBrief(title: "Daily Coaching", button: "Get Today's Coaching", prompt: "Give me my daily coaching: what matters most today, one thing that's off, and one specific change to approve. Under 100 words.")
-        }
-    }
-}
-
-// MARK: - Goals
-
 struct GoalsPage: View {
     @State private var store = Store.shared
     @State private var editing: Goal?
@@ -459,87 +398,141 @@ struct TaskEditor: View {
 
 // MARK: - Week (time blocking)
 
+func hhmm(_ d: Date) -> String { let c = Calendar.current.dateComponents([.hour, .minute], from: d); return String(format: "%02d:%02d", c.hour ?? 0, c.minute ?? 0) }
+
+/// The calendar: one day beside what actually happened, or the whole week.
 struct WeekPage: View {
+    var dayMode = false
     @State private var store = Store.shared
-    @State private var cal = CalendarService.shared
-    @State private var weekStart = Date().startOfWeek
+    @State private var start = Date().startOfDay
     @State private var editing: Block?
     @State private var draft: DraftBox?
     @State private var planning = false
     @State private var error: String?
-    static let hourH: CGFloat = 46, firstHour = 6, lastHour = 23
-    private var days: [Date] { (0..<7).map { weekStart.adding(days: $0) } }
+    static let hourH: CGFloat = 52, firstHour = 0, lastHour = 24, gutter: CGFloat = 52
+    private var first: Date { dayMode ? start : start.startOfWeek }
+    private var days: [Date] { (0..<(dayMode ? 1 : 7)).map { first.adding(days: $0) } }
+    private var isCurrent: Bool { dayMode ? Calendar.current.isDateInToday(start) : first == Date().startOfWeek }
     var body: some View {
-        HStack(spacing: 0) {
-            tray.frame(width: 230)
-            Divider()
-            VStack(spacing: 0) {
-                HStack {
-                    Button { weekStart = weekStart.adding(days: -7) } label: { Image(systemName: "chevron.left") }.accessibilityLabel("Previous week")
-                    Button("This Week") { weekStart = Date().startOfWeek }
-                    Button { weekStart = weekStart.adding(days: 7) } label: { Image(systemName: "chevron.right") }.accessibilityLabel("Next week")
-                    Text(weekStart.formatted(.dateTime.month(.wide).day())).font(.headline)
+        VStack(spacing: 0) {
+            ZStack {
+                HStack(spacing: 6) {
+                    round("chevron.left", dayMode ? "Previous day" : "Previous week") { start = start.adding(days: dayMode ? -1 : -7) }
+                    round("chevron.right", dayMode ? "Next day" : "Next week") { start = start.adding(days: dayMode ? 1 : 7) }
+                    Button(dayMode ? "Today" : "This week") { start = Date().startOfDay }.buttonStyle(QuietButton()).disabled(isCurrent)
                     Spacer()
-                    if !cal.granted && !GoogleCalendar.shared.connected { SettingsLink { Text("Connect Calendar") } }
+                    IconButton(icon: store.data.prefs.blockDuringFocus ? "shield.fill" : "shield", label: "Block distractions while focusing", on: store.data.prefs.blockDuringFocus) { store.data.prefs.blockDuringFocus.toggle() }
                     Button(planning ? "Planning…" : "Plan with Coach") {
                         planning = true; error = nil
                         Task { do { draft = DraftBox(draft: try await Coach.draftWeek()) } catch { self.error = error.localizedDescription }; planning = false }
                     }.buttonStyle(PillButton()).disabled(planning)
-                }.padding(10)
-                ErrorText(text: error).padding(.horizontal, 10).padding(.bottom, 6)
-                dayHeader
-                Divider()
-                ScrollViewReader { proxy in
-                    ScrollView { grid.id("grid") }
-                        .onAppear { proxy.scrollTo("grid", anchor: UnitPoint(x: 0, y: 0.15)) }
                 }
-            }.background(Color.surface)
+                title
+            }.padding(.horizontal, 14).frame(height: 54)
+            ErrorText(text: error).padding(.horizontal, 14)
+            if !dayMode { dayHeader }
+            else {
+                HStack(spacing: 0) {
+                    Color.clear.frame(width: Self.gutter, height: 1)
+                    Text("Planned").frame(maxWidth: .infinity)
+                    Text("Actual").frame(maxWidth: .infinity)
+                }.font(.caption.weight(.medium)).foregroundStyle(.secondary).padding(.bottom, 6)
+            }
+            Divider()
+            ScrollViewReader { proxy in
+                ScrollView { grid }
+                    .onAppear { proxy.scrollTo(max(0, Calendar.current.component(.hour, from: Date()) - 2), anchor: .top) }
+            }
         }
         .sheet(item: $editing) { BlockEditor(block: $0) }
         .sheet(item: $draft) { PlanSheet(draft: $0.draft) }
     }
-    private var tray: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Tasks").font(.headline).padding([.horizontal, .top], 12)
-            Text("Drag onto the calendar.").font(.caption).foregroundStyle(.secondary).padding(.horizontal, 12)
-            List(store.data.tasks.filter { !$0.done }) { t in
-                let c = store.goal(t.goalID).map { goalColor($0.color) } ?? .gray
-                Text(t.title).lineLimit(2).font(.callout.weight(.medium)).foregroundStyle(c.ink)
-                    .padding(.horizontal, 8).padding(.vertical, 6).frame(maxWidth: .infinity, alignment: .leading)
-                    .background(c.wash, in: .rect(cornerRadius: 7))
-                    .draggable(t.id.uuidString)
-                    .listRowSeparator(.hidden).listRowBackground(Color.clear)
-            }.scrollContentBackground(.hidden)
+    private func round(_ icon: String, _ label: String, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon).font(.system(size: 11, weight: .semibold)).frame(width: 28, height: 28)
+                .overlay(Circle().strokeBorder(Color.primary.opacity(0.12))).contentShape(.circle)
+        }.buttonStyle(.plain).accessibilityLabel(label)
+    }
+    @ViewBuilder private var title: some View {
+        if dayMode {
+            HStack(spacing: 6) {
+                Text(start.formatted(.dateTime.weekday(.abbreviated))).font(.system(size: 15, weight: .semibold))
+                Text(start.formatted(.dateTime.day())).font(.system(size: 13, weight: .bold)).foregroundStyle(isCurrent ? .white : .primary)
+                    .frame(minWidth: 24, minHeight: 24).background(isCurrent ? Color.now : .clear, in: .circle)
+            }
+        } else {
+            Text("\(first.formatted(.dateTime.month(.abbreviated).day())) – \(first.adding(days: 6).formatted(.dateTime.month(.abbreviated).day()))").font(.system(size: 15, weight: .semibold))
         }
     }
     private var dayHeader: some View {
         HStack(spacing: 0) {
-            Color.clear.frame(width: 44, height: 1)
+            Color.clear.frame(width: Self.gutter, height: 1)
             ForEach(days, id: \.self) { d in
                 let isToday = Calendar.current.isDateInToday(d)
                 HStack(spacing: 4) {
                     Text(d.formatted(.dateTime.weekday(.abbreviated))).font(.caption).foregroundStyle(.secondary)
                     Text(d.formatted(.dateTime.day())).font(.caption.weight(.semibold)).foregroundStyle(isToday ? .white : .primary)
-                        .frame(minWidth: 20, minHeight: 20).background(isToday ? goalPalette[1] : .clear, in: .circle)
+                        .frame(minWidth: 20, minHeight: 20).background(isToday ? Color.now : .clear, in: .circle)
                 }.frame(maxWidth: .infinity).padding(.bottom, 6)
             }
         }
     }
     private var grid: some View {
-        let hours = Self.lastHour - Self.firstHour
-        return GeometryReader { geo in
-            let colW = (geo.size.width - 44) / 7
+        GeometryReader { geo in
+            let colW = (geo.size.width - Self.gutter) / CGFloat(dayMode ? 2 : 7)
             HStack(spacing: 0) {
                 VStack(spacing: 0) {
                     ForEach(Self.firstHour..<Self.lastHour, id: \.self) { h in
-                        Text(Calendar.current.date(bySettingHour: h, minute: 0, second: 0, of: Date())!.formatted(.dateTime.hour()))
-                            .font(.caption2).foregroundStyle(.secondary).frame(width: 40, height: Self.hourH, alignment: .topTrailing).padding(.trailing, 4)
+                        Text(h == 0 ? "" : String(format: "%02d:00", h)).font(.caption2).monospacedDigit().foregroundStyle(.secondary)
+                            .frame(width: Self.gutter - 8, height: Self.hourH, alignment: .topTrailing).offset(y: -6).id(h)
+                    }
+                }.padding(.trailing, 8)
+                ForEach(days, id: \.self) { d in DayColumn(day: d, colW: colW, editing: $editing).frame(width: colW) }
+                if dayMode { ActualGrid(day: start, colW: colW).frame(width: colW) }
+            }
+            .overlay(alignment: .topLeading) {
+                if days.contains(where: Calendar.current.isDateInToday) {
+                    TimelineView(.periodic(from: .now, by: 60)) { t in
+                        Text(hhmm(t.date)).font(.system(size: 10, weight: .semibold)).monospacedDigit().foregroundStyle(.white)
+                            .padding(.horizontal, 4).padding(.vertical, 1).background(Color.now, in: .rect(cornerRadius: 4))
+                            .frame(width: Self.gutter - 4, alignment: .trailing).offset(y: DayColumn.y(t.date) - 8).allowsHitTesting(false)
                     }
                 }
-                ForEach(days, id: \.self) { d in DayColumn(day: d, colW: colW, editing: $editing).frame(width: colW) }
             }
         }
-        .frame(height: CGFloat(hours) * Self.hourH)
+        .frame(height: CGFloat(Self.lastHour - Self.firstHour) * Self.hourH)
+    }
+}
+
+/// Focus sessions laid on the same time grid as the plan.
+struct ActualGrid: View {
+    let day: Date, colW: CGFloat
+    @State private var store = Store.shared
+    var body: some View {
+        let sessions = store.data.sessions.filter { Calendar.current.isDate($0.start, inSameDayAs: day) }
+        ZStack(alignment: .topLeading) {
+            VStack(spacing: 0) {
+                ForEach(WeekPage.firstHour..<WeekPage.lastHour, id: \.self) { _ in Color.clear.frame(height: WeekPage.hourH).overlay(alignment: .top) { Divider() } }
+            }.overlay(alignment: .leading) { Divider() }
+            if sessions.isEmpty {
+                Text("As you make progress, what you actually did will appear here.").font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    .frame(width: colW - 40).offset(x: 20, y: DayColumn.y(Date()) + 16)
+            }
+            ForEach(sessions) { s in
+                let c = store.goal(s.goalID).map { goalColor($0.color) } ?? .gray
+                let top = DayColumn.y(s.start), h = max(22, DayColumn.y(s.start.addingTimeInterval(s.seconds)) - top)
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(s.title).font(.caption.weight(.semibold)).lineLimit(1)
+                        if h > 34 { Text("\(hhmm(s.start)) - \(hhmm(s.start.addingTimeInterval(s.seconds)))").font(.caption2).opacity(0.8) }
+                    }
+                    Spacer(minLength: 0)
+                    if let a = s.activity { Text("\(Tracker.breakdown(a, intention: s.title).score)%").font(.caption2.weight(.bold)).padding(.horizontal, 5).padding(.vertical, 1).background(.white.opacity(0.7), in: .capsule) }
+                }
+                .foregroundStyle(c.ink).padding(6).frame(width: colW - 8, height: h, alignment: .topLeading)
+                .background(c.wash, in: .rect(cornerRadius: 8)).offset(x: 4, y: top)
+            }
+        }
     }
 }
 struct DraftBox: Identifiable { let id = UUID(); let draft: PlanDraft }
@@ -550,7 +543,8 @@ struct DayColumn: View {
     @State private var store = Store.shared
     @State private var cal = CalendarService.shared
     @State private var targeted = false
-    private func y(_ d: Date) -> CGFloat {
+    private func y(_ d: Date) -> CGFloat { Self.y(d) }
+    static func y(_ d: Date) -> CGFloat {
         let c = Calendar.current.dateComponents([.hour, .minute], from: d)
         return (CGFloat(c.hour ?? 0) + CGFloat(c.minute ?? 0) / 60 - CGFloat(WeekPage.firstHour)) * WeekPage.hourH
     }
@@ -566,7 +560,7 @@ struct DayColumn: View {
                     Rectangle().fill(.clear).frame(height: WeekPage.hourH).overlay(alignment: .top) { Divider() }
                 }
             }
-            .background(targeted ? Color.brand.opacity(0.08) : Calendar.current.isDateInToday(day) ? Color.brand.opacity(0.03) : .clear)
+            .background(targeted ? Color.brand.opacity(0.08) : .clear)
             .overlay(alignment: .leading) { Divider() }
             .contentShape(.rect)
             .gesture(SpatialTapGesture(count: 2).onEnded { v in
@@ -581,10 +575,13 @@ struct DayColumn: View {
             ForEach(cal.events(from: day, to: day.adding(days: 1)).filter { !$0.allDay }) { e in
                 let goal = store.goal(store.data.prefs.eventGoals[e.id])
                 let c = goal.map { goalColor($0.color) } ?? e.color
-                Text(e.title).font(.caption2).lineLimit(2).padding(3)
-                    .frame(width: colW - 4, height: max(16, y(e.end) - y(e.start)), alignment: .topLeading)
-                    .background(c.opacity(0.12), in: .rect(cornerRadius: 5)).foregroundStyle(c.ink)
-                    .offset(x: 2, y: y(e.start))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(e.title).font(.caption.weight(.semibold)).lineLimit(2)
+                    if y(e.end) - y(e.start) > 34 { Text("\(hhmm(e.start)) - \(hhmm(e.end))").font(.caption2).opacity(0.8) }
+                }.padding(6)
+                    .frame(width: colW - 6, height: max(18, y(e.end) - y(e.start) - 2), alignment: .topLeading)
+                    .background(c.wash, in: .rect(cornerRadius: 8)).foregroundStyle(c.ink)
+                    .offset(x: 3, y: y(e.start) + 1)
                     .contextMenu {
                         ForEach(store.goals) { g in Button("Counts toward \(g.title)") { store.data.prefs.eventGoals[e.id] = g.id } }
                         if goal != nil { Button("Remove Goal") { store.data.prefs.eventGoals[e.id] = nil } }
@@ -593,8 +590,8 @@ struct DayColumn: View {
             ForEach(store.blocks(on: day)) { b in BlockView(block: b, colW: colW, top: y(b.start), height: y(b.end) - y(b.start), editing: $editing) }
             if Calendar.current.isDateInToday(day) {
                 TimelineView(.periodic(from: .now, by: 60)) { t in
-                    Rectangle().fill(goalPalette[1]).frame(width: colW, height: 1.5)
-                        .overlay(alignment: .leading) { Circle().fill(goalPalette[1]).frame(width: 7, height: 7).offset(x: -3) }
+                    Rectangle().fill(Color.now).frame(width: colW, height: 1.5)
+                        .overlay(alignment: .leading) { Circle().fill(Color.now).frame(width: 7, height: 7).offset(x: -3) }
                         .offset(y: y(t.date)).allowsHitTesting(false)
                 }
             }
@@ -607,6 +604,7 @@ struct BlockView: View {
     @State private var store = Store.shared
     @State private var drag = CGSize.zero
     @State private var grow: CGFloat = 0
+    @State private var detail = false
     private static let quarter = WeekPage.hourH / 4
     private func snap(_ v: CGFloat) -> CGFloat { (v / Self.quarter).rounded() * Self.quarter }
     var body: some View {
@@ -616,15 +614,16 @@ struct BlockView: View {
                 if let e = block.energy { Image(systemName: e == .energizing ? "bolt.fill" : "battery.25percent").font(.system(size: 8)).accessibilityLabel(e.rawValue) }
                 Text(block.title).font(.caption.weight(.semibold)).lineLimit(2)
             }
-            if height > 34 { Text(block.start.clock).font(.caption2).opacity(0.8) }
+            if height > 34 { Text("\(hhmm(block.start)) - \(hhmm(block.end))").font(.caption2).opacity(0.8) }
             Spacer(minLength: 0)
         }
         .foregroundStyle(c.ink)
-        .padding(5)
-        .frame(width: colW - 4, height: max(18, height + grow), alignment: .topLeading)
-        .background(Color.surface, in: .rect(cornerRadius: 6))
-        .overlay { RoundedRectangle(cornerRadius: 6).fill(c.opacity(0.2)).allowsHitTesting(false) }
-        .overlay { RoundedRectangle(cornerRadius: 6).strokeBorder(c.opacity(0.35)).allowsHitTesting(false) }
+        .padding(6)
+        .frame(width: colW - 6, height: max(18, height + grow - 2), alignment: .topLeading)
+        .background(Color.surface, in: .rect(cornerRadius: 8))
+        .overlay { RoundedRectangle(cornerRadius: 8).fill(c.opacity(0.22)).allowsHitTesting(false) }
+        .overlay(alignment: .leading) { RoundedRectangle(cornerRadius: 2).fill(c).frame(width: 3).padding(.vertical, 4).padding(.leading, 2).allowsHitTesting(false) }
+        .popover(isPresented: $detail, arrowEdge: .trailing) { BlockDetail(block: block, editing: $editing, shown: $detail) }
         .overlay(alignment: .bottom) {
             Color.clear.frame(height: 8).contentShape(.rect)
                 .onHover { $0 ? NSCursor.resizeUpDown.push() : NSCursor.pop() }
@@ -637,6 +636,7 @@ struct BlockView: View {
         }
         .contentShape(.rect)
         .onTapGesture(count: 2) { editing = block }
+        .onTapGesture { detail = true }
         .gesture(DragGesture(minimumDistance: 4, coordinateSpace: .global)
             .onChanged { drag = CGSize(width: ($0.translation.width / colW).rounded() * colW, height: snap($0.translation.height)) }
             .onEnded { _ in
@@ -657,7 +657,7 @@ struct BlockView: View {
             Divider()
             Button("Delete", role: .destructive) { store.deleteBlock(block) }
         }
-        .offset(x: 2 + drag.width, y: top + drag.height)
+        .offset(x: 3 + drag.width, y: top + 1 + drag.height)
         .zIndex(drag == .zero ? 0 : 1)
         .animation(.spring(duration: 0.2, bounce: 0), value: drag)
     }

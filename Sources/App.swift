@@ -101,7 +101,7 @@ struct PageView: View {
     let page: Page
     var body: some View {
         switch page {
-        case .today: TodayPage(); case .goals: GoalsPage(); case .week: WeekPage(); case .tasks: TasksPage(); case .focus: FocusPage()
+        case .today: WeekPage(dayMode: true); case .goals: GoalsPage(); case .week: WeekPage(); case .tasks: TasksPage(); case .focus: FocusPage()
         case .coach: CoachPage(); case .journal: JournalPage(); case .capture: CapturePage(); case .insights: InsightsPage()
         }
     }
