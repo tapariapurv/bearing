@@ -360,8 +360,10 @@ struct MenuBarView: View {
         let today = now.startOfDay
         s.data.blocks.append(Block(title: "Outline chapter 7", start: today.addingTimeInterval(14 * 3600), end: today.addingTimeInterval(15.5 * 3600), goalID: g[0].id))
         for d in 0..<35 where d % 2 == 0 {
-            s.data.sessions.append(Session(title: "Writing", goalID: g[d % 4 == 0 ? 0 : 1].id, start: now.adding(days: -d), seconds: Double(40 + d * 2) * 60, pausedSeconds: 120, distractions: d % 3))
+            s.data.sessions.append(Session(title: "Writing", goalID: g[d % 4 == 0 ? 0 : 1].id, start: now.adding(days: -d), seconds: Double(40 + d * 2) * 60, pausedSeconds: 120, distractions: d % 3,
+                activity: [AppTime(id: "com.apple.iWork.Pages", name: "Pages", seconds: 1900), AppTime(id: "com.apple.Safari|youtube", name: "Safari · youtube", seconds: 260, site: "youtube"), AppTime(id: "idle", name: "Away", seconds: 240)]))
         }
+        Focus.shared.finished = s.data.sessions.first
         s.data.chat = [ChatMsg(role: "user", text: "What should I change this week?"),
                        ChatMsg(role: "assistant", text: "Your newsletter has no time on the calendar, and you've missed it three weeks running. Either give it Thursday 2 to 4pm, or drop it until next season. Which would you like?")]
         s.data.journal = [JournalEntry(id: now.dayKey, prompt: Prompts.today(now), text: "Good morning of writing. The chapter finally has a shape.")]
@@ -542,6 +544,11 @@ struct MenuBarView: View {
     qs.data.goals = keep
     let ob = try? JSONDecoder().decode(Block.self, from: JSONEncoder().encode(Block(title: "b")))
     check(ob?.energy == nil && Energy(rawValue: "draining") == .draining, "blocks without energy tags still load")
+    let act = [AppTime(id: "a", name: "Code", seconds: 60), AppTime(id: "b", name: "Chat", seconds: 20), AppTime(id: "x|youtube", name: "Safari", seconds: 10, site: "youtube"), AppTime(id: "idle", name: "Away", seconds: 10)]
+    let fb = Tracker.breakdown(act, intention: "Write code", distracting: ["b"])
+    check(fb.score == 60 && fb.distraction == 30 && fb.idle == 10, "focus quality counts on-task, distraction and idle time")
+    check(Tracker.breakdown(act, intention: "Watch the YouTube lecture", distracting: ["b"]).onTask == 70, "a site named in the intention stays on task")
+    check(Tracker.site(in: "Funny cats - YouTube") == "youtube" && Tracker.site(in: "Pull request") == nil, "distracting sites are found in window titles")
     check(Coach.fallbackQuestions([Goal(title: "Run")]).allSatisfy { (2...4).contains($0.options.count) }, "fallback season questions have 2 to 4 options")
     print(failed == 0 ? "ALL PASSED" : "\(failed) FAILED")
     exit(failed == 0 ? 0 : 1)
@@ -596,6 +603,7 @@ private struct FloatingTimerView: View {
         focus.phase == .rest ? goalColor(4) : Store.shared.goal(focus.goalID).map { goalColor($0.color) } ?? .brand
     }
     private var label: String {
+        if let n = focus.notice { return "Focus Mode Active · \(n) is on your blocklist" }
         if focus.exitAt != nil { return "Ending soon" }
         if focus.phase == .rest { return "Break" }
         return focus.title.isEmpty ? "Focus" : focus.title

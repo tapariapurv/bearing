@@ -58,6 +58,7 @@ struct Session: Codable, Identifiable, Hashable {
     var seconds = 0.0
     var pausedSeconds = 0.0
     var distractions = 0
+    var activity: [AppTime]?   // on-device app tracking
     var quality: Int { Self.quality(seconds: seconds, paused: pausedSeconds, distractions: distractions) }
     static func quality(seconds: Double, paused: Double, distractions: Int) -> Int {
         guard seconds > 0 else { return 0 }
@@ -114,6 +115,7 @@ struct Prefs: Codable {
     var eventGoals: [String: UUID] = [:]
     var blockSites = ["x.com", "twitter.com", "reddit.com", "youtube.com", "instagram.com", "facebook.com", "tiktok.com"]
     var blockApps: [String] = []
+    var distractingApps: [String]?
     var blockDuringFocus = false
     var exitDelay = 60
     var timerMode = TimerMode.pomodoro

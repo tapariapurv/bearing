@@ -23,6 +23,8 @@ import Observation
     var start = Date()
     var exitAt: Date?          // strict blocking: the delayed way out
     var finished: Session?
+    var activity: [String: AppTime] = [:]
+    var notice: String?        // "x is on your blocklist"
     @ObservationIgnored private var loop: Task<Void, Never>?
     @ObservationIgnored private var last = Date()
     @ObservationIgnored private var attempted = false
@@ -49,7 +51,7 @@ import Observation
         if goal != nil { goalID = goal }
         if task != nil { taskID = task }
         self.mode = mode ?? prefs.timerMode
-        worked = 0; pausedFor = 0; cycle = 1; distractions = 0; paused = false; exitAt = nil; finished = nil
+        worked = 0; pausedFor = 0; cycle = 1; distractions = 0; paused = false; exitAt = nil; finished = nil; activity = [:]
         start = Date(); last = Date(); phase = .work; phaseLeft = workLength
         Store.shared.data.prefs.timerMode = self.mode
         if !Store.isTesting {
@@ -64,6 +66,7 @@ import Observation
     private func heartbeat() {
         let now = Date(), dt = now.timeIntervalSince(last); last = now
         tick(dt > 5 ? 0 : dt) // a sleeping Mac is not focus time
+        if phase == .work && !paused && dt <= 5 { Tracker.sample(dt, into: &activity) }
         if let e = exitAt, now >= e { finish() }
     }
     func tick(_ dt: Double) {
@@ -97,7 +100,7 @@ import Observation
         phase = .idle; paused = false; exitAt = nil
         if !Store.isTesting { Blocker.shared.release(); FloatingTimer.hide(); if prefs.playOnFocus { Music.shared.pause() } }
         if worked >= 60 {
-            let s = Session(title: title.isEmpty ? "Focus" : title, goalID: goalID, taskID: taskID, start: start, seconds: worked, pausedSeconds: pausedFor, distractions: distractions)
+            let s = Session(title: title.isEmpty ? "Focus" : title, goalID: goalID, taskID: taskID, start: start, seconds: worked, pausedSeconds: pausedFor, distractions: distractions, activity: activity.isEmpty ? nil : Array(activity.values))
             Store.shared.data.sessions.append(s); finished = s
         }
         title = ""; goalID = nil; taskID = nil
@@ -198,7 +201,12 @@ import Observation
     private func police(_ app: NSRunningApplication, counted: Bool = true) {
         guard engaged, Focus.shared.phase == .work, let id = app.bundleIdentifier, Store.shared.data.prefs.blockApps.contains(id) else { return }
         app.terminate() // asks politely, so the app can save
-        if counted { Focus.shared.noteDistraction() }
+        if counted {
+            Focus.shared.noteDistraction()
+            let name = app.localizedName ?? id
+            Focus.shared.notice = name
+            Task { try? await Task.sleep(for: .seconds(4)); if Focus.shared.notice == name { Focus.shared.notice = nil } }
+        }
     }
     func release() {
         guard engaged else { return }

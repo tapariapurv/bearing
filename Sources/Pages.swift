@@ -193,17 +193,22 @@ struct TodayPage: View {
             GoalStrip()
             HStack(alignment: .top, spacing: 16) {
                 Card(title: "Today's Plan") {
-                    if blocks.isEmpty && events.isEmpty {
-                        Text("Nothing blocked yet.").foregroundStyle(.secondary)
-                        Button("Plan the Week") { Nav.shared.page = .week }
-                    }
-                    ForEach(events) { e in
-                        PlanRow(title: e.title, time: "\(e.start.clock) to \(e.end.clock)", color: e.color) { EmptyView() }
-                    }
-                    ForEach(blocks) { b in
-                        PlanRow(title: b.title, time: "\(b.start.clock) to \(b.end.clock)", color: store.goal(b.goalID).map { goalColor($0.color) } ?? .gray) {
-                            if !focus.active && b.end > Date() { Button("Start Focus") { focus.begin(title: b.title, goal: b.goalID, task: b.taskID); Nav.shared.page = .focus } }
-                        }
+                    HStack(alignment: .top, spacing: 16) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            if blocks.isEmpty && events.isEmpty {
+                                Text("Nothing blocked yet.").foregroundStyle(.secondary)
+                                Button("Plan the Week") { Nav.shared.page = .week }
+                            }
+                            ForEach(events) { e in
+                                PlanRow(title: e.title, time: "\(e.start.clock) to \(e.end.clock)", color: e.color) { EmptyView() }
+                            }
+                            ForEach(blocks) { b in
+                                PlanRow(title: b.title, time: "\(b.start.clock) to \(b.end.clock)", color: store.goal(b.goalID).map { goalColor($0.color) } ?? .gray) {
+                                    if !focus.active && b.end > Date() { Button("Start Focus") { focus.begin(title: b.title, goal: b.goalID, task: b.taskID); Nav.shared.page = .focus } }
+                                }
+                            }
+                        }.frame(maxWidth: .infinity, alignment: .leading)
+                        ActualColumn().frame(width: 220)
                     }
                 }
                 VStack(spacing: 16) {
@@ -751,12 +756,9 @@ struct FocusPage: View {
                         Button("Start Focus") { focus.begin() }.buttonStyle(PillButton()).controlSize(.large)
                         settings
                     }
-                    if let r = focus.finished, !focus.active {
-                        Label("\(hm(r.seconds)) focused · Quality \(r.quality)", systemImage: "checkmark.circle").foregroundStyle(.green)
-                            .transition(.opacity)
-                    }
                 }.frame(maxWidth: .infinity)
             }
+            if let r = focus.finished, !focus.active { FocusSummary(session: r) }
             HStack(alignment: .top, spacing: 16) {
                 MusicCard()
                 BlockCard().frame(maxWidth: 340)
