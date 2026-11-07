@@ -14,7 +14,12 @@ struct Goal: Codable, Identifiable, Hashable {
     var status = GoalStatus.none
     var coachNote = ""
     var archived = false
+    var level: GoalTier?       // optional so older data files still load
+    var tier: GoalTier { get { level ?? .core } set { level = newValue } }
 }
+enum GoalTier: String, Codable, CaseIterable { case core = "Core", secondary = "Secondary", support = "Support area" }
+extension GoalTier { var rank: Int { Self.allCases.firstIndex(of: self)! } }
+struct QA: Codable, Hashable { var q: String; var a: String }
 enum GoalStatus: String, Codable { case none, onTrack, adjust, offTrack
     var label: String { switch self { case .none: "Not reviewed"; case .onTrack: "On track"; case .adjust: "Adjust"; case .offTrack: "Off track" } }
     var color: Color { switch self { case .none: .secondary; case .onTrack: goalPalette[4]; case .adjust: goalPalette[6]; case .offTrack: goalPalette[1] } }
@@ -134,6 +139,7 @@ struct AppData: Codable {
     var outbox: [TodoistCommand] = []
     var projects: [String: String] = [:]
     var prefs = Prefs()
+    var seasonQA: [QA]?        // answers from season setup
 }
 
 extension Date {
@@ -197,7 +203,8 @@ extension Color {
     func saveNow() { guard !Self.isTesting else { return }; if let d = try? Self.encoder.encode(data) { try? d.write(to: file, options: .atomic) } }
 
     // MARK: Queries
-    var goals: [Goal] { data.goals.filter { !$0.archived } }
+    /// Active goals in priority order: core, then secondary, then support areas, each in the order you ranked them.
+    var goals: [Goal] { data.goals.filter { !$0.archived }.enumerated().sorted { ($0.element.tier.rank, $0.offset) < ($1.element.tier.rank, $1.offset) }.map(\.element) }
     func goal(_ id: UUID?) -> Goal? { data.goals.first { $0.id == id } }
     func task(_ id: UUID?) -> TaskItem? { data.tasks.first { $0.id == id } }
     var seasonEnd: Date { data.seasonStart.adding(days: data.seasonWeeks * 7) }

@@ -17,6 +17,7 @@ enum Page: String, CaseIterable, Identifiable {
     static let shared = Nav()
     var page = Page.today
     var coachDraft = ""        // text waiting in the coach composer
+    var seasonSetup = false
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -104,13 +105,17 @@ struct RootView: View {
                                 .frame(width: 22, height: 22).background(p.tint, in: .rect(cornerRadius: 6))
                         }
                     }
-                    if !store.goals.isEmpty {
+                    let goals = store.goals, main = goals.filter { $0.tier != .support }, support = goals.filter { $0.tier == .support }
+                    if !main.isEmpty {
                         Text("Goals").font(.caption.weight(.semibold)).foregroundStyle(.secondary).padding(.horizontal, 6).padding(.top, 14).padding(.bottom, 2)
-                        ForEach(store.goals) { g in
-                            SidebarRow(title: g.title, selected: false, action: { nav.page = .goals }) {
-                                Circle().fill(goalColor(g.color)).frame(width: 8, height: 8).frame(width: 22)
-                            }
-                        }
+                        ForEach(main) { goalRow($0) }
+                    }
+                    if !support.isEmpty {
+                        Button { showSupport.toggle() } label: {
+                            HStack(spacing: 4) { Text("Support areas"); Image(systemName: "chevron.right").font(.system(size: 9, weight: .bold)).rotationEffect(.degrees(showSupport ? 90 : 0)) }
+                                .font(.caption.weight(.semibold)).foregroundStyle(.secondary).padding(.horizontal, 6).padding(.top, 14).padding(.bottom, 2).contentShape(.rect)
+                        }.buttonStyle(.plain).accessibilityLabel(showSupport ? "Hide support areas" : "Show support areas")
+                        if showSupport { ForEach(support) { goalRow($0) } }
                     }
                 }
                 .padding(.horizontal, 10).padding(.vertical, 8)
@@ -119,7 +124,12 @@ struct RootView: View {
         } detail: {
             PageView(page: nav.page).frame(maxWidth: .infinity, maxHeight: .infinity).background(Color.page).navigationTitle(nav.page.rawValue)
         }
+        .sheet(isPresented: $nav.seasonSetup) { SeasonSetup().bearingStyle() }
         .bearingStyle()
+    }
+    @State private var showSupport = true
+    private func goalRow(_ g: Goal) -> some View {
+        SidebarRow(title: g.title, selected: false, action: { nav.page = .goals }) { GoalIcon(goal: g) }
     }
 }
 struct PageView: View {
@@ -331,7 +341,8 @@ struct MenuBarView: View {
         let g = [Goal(title: "Ship the book draft", why: "It's the thing I'll regret not finishing", metric: "60,000 words by January", color: 0, weeklyHours: 10, notes: "Finish chapter 7 outline", status: .onTrack, coachNote: "You're ahead of pace. Keep mornings protected."),
                  Goal(title: "Run a half marathon", why: "Energy for everything else", metric: "Finish in under 2 hours", color: 2, weeklyHours: 4, status: .adjust, coachNote: "Only one run is planned. Add a long run on Saturday."),
                  Goal(title: "Launch the newsletter", why: "Build an audience I own", metric: "1,000 subscribers", color: 1, weeklyHours: 3, status: .offTrack, coachNote: "Nothing is scheduled. Pick a first issue date, or drop this for the season.")]
-        s.data.goals = g
+        s.data.goals = g + [Goal(title: "Home admin", color: 4, weeklyHours: 1, level: .support)]
+        s.data.goals[2].level = .secondary
         s.data.tasks = [TaskItem(todoistID: "1", title: "Outline chapter 7", project: "Book", goalID: g[0].id, due: now, priority: 4),
                         TaskItem(title: "Book physio appointment", goalID: g[1].id, due: now.adding(days: 1)),
                         TaskItem(todoistID: "2", title: "Draft first newsletter issue", project: "Newsletter", goalID: g[2].id, priority: 3),
@@ -517,6 +528,13 @@ struct MenuBarView: View {
     qs.quickAdd("one", as: .journal); qs.quickAdd("two", as: .journal)
     check(qs.data.tasks.count == qt + 1 && qs.data.captures.count == qc + 1, "quick add makes one task and one note, ignores blanks")
     check(qs.data.journal.first { $0.id == Date().dayKey }?.text == "one\ntwo", "quick add appends to today's journal")
+    let old = try? JSONDecoder().decode(Goal.self, from: Data(#"{"id":"\#(UUID())","title":"Old","why":"","metric":"","color":0,"weeklyHours":5,"notes":"","status":"\#(GoalStatus.none.rawValue)","coachNote":"","archived":false}"#.utf8))
+    check(old?.tier == .core, "goals saved before tiers load as core")
+    let keep = qs.data.goals
+    qs.data.goals = [Goal(title: "S", level: .support), Goal(title: "B", level: .secondary), Goal(title: "A"), Goal(title: "X", archived: true)]
+    check(qs.goals.map(\.title) == ["A", "B", "S"], "goals rank core, secondary, support and hide archived")
+    qs.data.goals = keep
+    check(Coach.fallbackQuestions([Goal(title: "Run")]).allSatisfy { (2...4).contains($0.options.count) }, "fallback season questions have 2 to 4 options")
     print(failed == 0 ? "ALL PASSED" : "\(failed) FAILED")
     exit(failed == 0 ? 0 : 1)
 }

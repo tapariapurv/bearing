@@ -106,14 +106,14 @@ struct GoalPicker: View {
 struct GoalStrip: View {
     @State private var store = Store.shared
     var body: some View {
-        let goals = store.goals
-        if goals.isEmpty {
+        let goals = store.goals.filter { $0.tier != .support }
+        if store.goals.isEmpty {
             Card {
                 Text("Start with what matters.").font(.title3.weight(.semibold))
                 Text("Bearing works best with one to three goals for this season.").foregroundStyle(.secondary)
                 HStack {
-                    Button("Set Goals with the Coach") { Coach.startInterview() }.buttonStyle(PillButton())
-                    Button("Add a Goal") { Nav.shared.page = .goals }
+                    Button("Set Up Your Season") { Nav.shared.seasonSetup = true }.buttonStyle(PillButton())
+                    Button("Talk It Through with the Coach") { Coach.startInterview() }
                 }
             }
         } else {
@@ -124,6 +124,7 @@ struct GoalStrip: View {
                         VStack(alignment: .leading, spacing: 8) {
                             HStack(alignment: .firstTextBaseline) {
                                 Text(g.title).font(.headline).lineLimit(1)
+                                if g.tier != .core { Text(g.tier.rawValue).font(.caption2.weight(.semibold)).foregroundStyle(.secondary) }
                                 Spacer(minLength: 4)
                                 Pill(status: g.status)
                             }
@@ -246,7 +247,11 @@ struct GoalsPage: View {
                     DatePicker("Starts", selection: $s.data.seasonStart, displayedComponents: .date)
                     Step("\(s.data.seasonWeeks) weeks", value: $s.data.seasonWeeks, in: 4...26)
                 }
-                Text("Day \(store.seasonDay) of \(s.data.seasonWeeks * 7), ending \(store.seasonEnd.formatted(date: .abbreviated, time: .omitted)).").font(.caption).foregroundStyle(.secondary)
+                HStack {
+                    Text("Day \(store.seasonDay) of \(s.data.seasonWeeks * 7), ending \(store.seasonEnd.formatted(date: .abbreviated, time: .omitted)).").font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Plan a New Season") { Nav.shared.seasonSetup = true }
+                }
             }
             HStack {
                 Text("Goals").font(.title3.weight(.semibold))
