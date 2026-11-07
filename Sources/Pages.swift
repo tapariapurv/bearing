@@ -862,13 +862,25 @@ struct CoachPage: View {
     private let starters = ["What should I change this week?", "Which goal should I drop?", "Review my last week honestly", "I'm overwhelmed. Help me choose."]
     var body: some View {
         VStack(spacing: 0) {
+            HStack(spacing: 2) {
+                Text("Coach").font(.system(size: 15, weight: .semibold))
+                Spacer()
+                IconButton(icon: "target", label: "Turn into goals") { adopt() }.disabled(store.data.chat.isEmpty || busy)
+                IconButton(icon: "square.and.pencil", label: "New chat") { store.data.chat = [] }.disabled(store.data.chat.isEmpty)
+                if nav.side { IconButton(icon: "xmark", label: "Close coach") { nav.side = false } }
+            }.padding(.horizontal, 14).frame(height: 50)
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 12) {
                         if store.data.chat.isEmpty {
                             VStack(alignment: .leading, spacing: 8) {
                                 Text("Ask your coach anything about your goals, week or habits.").foregroundStyle(.secondary)
-                                ForEach(starters, id: \.self) { p in Button(p) { nav.coachDraft = p; send() } }
+                                ForEach(starters, id: \.self) { p in
+                                    Button { nav.coachDraft = p; send() } label: {
+                                        Text(p).font(.callout).multilineTextAlignment(.leading).padding(.horizontal, 12).padding(.vertical, 7)
+                                            .overlay(Capsule().strokeBorder(Color.primary.opacity(0.12))).contentShape(.capsule)
+                                    }.buttonStyle(.plain)
+                                }
                             }
                         }
                         ForEach(store.data.chat) { m in
@@ -898,10 +910,6 @@ struct CoachPage: View {
             }
             .padding(.leading, 16).padding(.trailing, 8).padding(.vertical, 6).surface(22)
             .padding(14).frame(maxWidth: 780)
-        }
-        .toolbar {
-            Button("Turn into Goals") { adopt() }.disabled(store.data.chat.isEmpty || busy)
-            Button("Clear") { store.data.chat = [] }.disabled(store.data.chat.isEmpty)
         }
     }
     private func send() {
