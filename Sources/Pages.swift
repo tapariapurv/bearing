@@ -1135,6 +1135,7 @@ struct InsightsPage: View {
                 stat("Sessions", "\(thisWeek.count)", goalPalette[2])
                 stat("Average quality", thisWeek.isEmpty ? "None yet" : "\(quality)", goalPalette[3])
             }
+            AccountabilityCard()
             Card(title: "This Week by Day") {
                 Chart(thisWeek) { s in
                     BarMark(x: .value("Day", s.start.formatted(.dateTime.weekday(.abbreviated))), y: .value("Hours", s.seconds / 3600), width: .ratio(0.6))
@@ -1166,7 +1167,7 @@ struct InsightsPage: View {
                     }
                 }
             }
-            CoachBrief(title: "Weekly Coaching", button: "Get This Week's Review", prompt: "Review my week: what went well, what slipped, and one specific change for next week. Include what to drop if I'm overcommitted. Under 150 words.")
+            CoachBrief(title: "Weekly Coaching", button: "Get This Week's Review", prompt: "Give me an honest review of my season so far. Be blunt: say plainly which goals I'm neglecting and where my time is going against my priorities, using the accountability numbers, my reflections and energy tags. Then give one specific fix per problem, and say what to drop if I'm overcommitted. No flattery. Under 180 words.")
         }
     }
     private func stat(_ t: String, _ v: String, _ c: Color) -> some View {

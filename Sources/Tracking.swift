@@ -18,7 +18,7 @@ struct FocusBreakdown: Equatable { var onTask = 0.0, distraction = 0.0, idle = 0
 @MainActor enum Tracker {
     static let idleAfter = 90.0
     static let defaultDistracting = ["com.apple.MobileSMS", "com.hnc.Discord", "net.whatsapp.WhatsApp", "ru.keepcoder.Telegram", "com.apple.TV", "com.apple.news", "com.valvesoftware.steam", "com.apple.FaceTime"]
-    static let sites = ["youtube", "netflix", "reddit", "instagram", "facebook", "tiktok", "twitch", "x.com", "twitter", "news.ycombinator"]
+    nonisolated static let sites = ["youtube", "netflix", "reddit", "instagram", "facebook", "tiktok", "twitch", "x.com", "twitter", "news.ycombinator"]
     static var distracting: Set<String> { Set((Store.shared.data.prefs.distractingApps ?? defaultDistracting) + Store.shared.data.prefs.blockApps) }
 
     /// One second of the session: idle, or whatever app is in front.

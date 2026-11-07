@@ -356,6 +356,7 @@ struct Extracted: Decodable {
         }
         if let qa = d.seasonQA, !qa.isEmpty { o += "Season setup answers:\n"; for x in qa { o += "- \(x.q) \(x.a)\n" } }
         o += loopContext
+        o += accountContext
         o += "Open tasks:\n"
         for t in d.tasks.filter({ !$0.done }).sorted(by: { $0.priority > $1.priority }).prefix(40) {
             o += "- \(t.title)\(s.goal(t.goalID).map { " [goal: \($0.title)]" } ?? "")\(t.due.map { " due \($0.dayKey)" } ?? "")\n"
