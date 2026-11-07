@@ -128,6 +128,11 @@ struct Prefs: Codable {
     var externalURI = ""
     var soundLevels: [String: Double] = [:]
     var playOnFocus = true
+    var profile: Profile?      // signed-in Google account; nil shows the welcome screen
+}
+struct Profile: Codable, Hashable {
+    var name = "", email = ""
+    var initials: String { let w = (name.isEmpty ? email : name).split(separator: " ").prefix(2); return w.compactMap { $0.first.map(String.init) }.joined().uppercased() }
 }
 struct AppData: Codable {
     var compass = ""
@@ -173,6 +178,7 @@ extension Color {
     /// Ink: black pills and selection, like a pen on white paper.
     static let brand = dyn(0x111114, 0xF4F4F5)
     static let page = dyn(0xFFFFFF, 0x161618)
+    static let chrome = dyn(0xF1F1F3, 0x0C0C0E)   // window background behind the floating panels
     static let surface = dyn(0xFFFFFF, 0x1F2023)
     /// Soft fill behind colored content, and readable text to put on it.
     var wash: Color { opacity(0.16) }

@@ -20,6 +20,8 @@ enum Page: String, CaseIterable, Identifiable {
     var seasonSetup = false
     var dailySync = false
     var reflect = false
+    var showTasks = true       // left tasks panel
+    var side = false           // coach in the right panel
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -73,6 +75,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             RootView().frame(minWidth: 960, minHeight: 620)
         }
         .defaultSize(width: 1240, height: 800)
+        .windowStyle(.hiddenTitleBar)
         .commands {
             CommandMenu("Go") {
                 ForEach(Array(Page.allCases.enumerated()), id: \.element) { i, p in
@@ -94,48 +97,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-struct RootView: View {
-    @State private var nav = Nav.shared
-    @State private var store = Store.shared
-    var body: some View {
-        NavigationSplitView {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 2) {
-                    ForEach(Page.allCases) { p in
-                        SidebarRow(title: p.rawValue, selected: nav.page == p, action: { nav.page = p }) {
-                            Image(systemName: p.icon).font(.system(size: 11, weight: .semibold)).foregroundStyle(.white)
-                                .frame(width: 22, height: 22).background(p.tint, in: .rect(cornerRadius: 6))
-                        }
-                    }
-                    let goals = store.goals, main = goals.filter { $0.tier != .support }, support = goals.filter { $0.tier == .support }
-                    if !main.isEmpty {
-                        Text("Goals").font(.caption.weight(.semibold)).foregroundStyle(.secondary).padding(.horizontal, 6).padding(.top, 14).padding(.bottom, 2)
-                        ForEach(main) { goalRow($0) }
-                    }
-                    if !support.isEmpty {
-                        Button { showSupport.toggle() } label: {
-                            HStack(spacing: 4) { Text("Support areas"); Image(systemName: "chevron.right").font(.system(size: 9, weight: .bold)).rotationEffect(.degrees(showSupport ? 90 : 0)) }
-                                .font(.caption.weight(.semibold)).foregroundStyle(.secondary).padding(.horizontal, 6).padding(.top, 14).padding(.bottom, 2).contentShape(.rect)
-                        }.buttonStyle(.plain).accessibilityLabel(showSupport ? "Hide support areas" : "Show support areas")
-                        if showSupport { ForEach(support) { goalRow($0) } }
-                    }
-                }
-                .padding(.horizontal, 10).padding(.vertical, 8)
-            }
-            .navigationSplitViewColumnWidth(min: 170, ideal: 190)
-        } detail: {
-            PageView(page: nav.page).frame(maxWidth: .infinity, maxHeight: .infinity).background(Color.page).navigationTitle(nav.page.rawValue)
-        }
-        .sheet(isPresented: $nav.seasonSetup) { SeasonSetup().bearingStyle() }
-        .sheet(isPresented: $nav.dailySync) { DailySync().bearingStyle() }
-        .sheet(isPresented: $nav.reflect) { ReflectView().bearingStyle() }
-        .bearingStyle()
-    }
-    @State private var showSupport = true
-    private func goalRow(_ g: Goal) -> some View {
-        SidebarRow(title: g.title, selected: false, action: { nav.page = .goals }) { GoalIcon(goal: g) }
-    }
-}
 struct PageView: View {
     let page: Page
     var body: some View {
@@ -340,6 +301,7 @@ struct MenuBarView: View {
 @MainActor enum Snapshot {
     static func demo() {
         let s = Store.shared, now = Date(), week = now.startOfWeek
+        s.data.prefs.profile = Profile(name: "Alex Rivera", email: "alex@example.com")
         s.data.compass = "Do work I'm proud of, stay healthy, and be present with the people I love."
         s.data.seasonName = "Autumn season"; s.data.seasonStart = now.adding(days: -51)
         let g = [Goal(title: "Ship the book draft", why: "It's the thing I'll regret not finishing", metric: "60,000 words by January", color: 0, weeklyHours: 10, notes: "Finish chapter 7 outline", status: .onTrack, coachNote: "You're ahead of pace. Keep mornings protected."),
@@ -379,7 +341,7 @@ struct MenuBarView: View {
             for p in Page.allCases {
                 let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1240, height: 800), styleMask: [.titled, .closable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
                 Nav.shared.page = p
-                w.contentView = NSHostingView(rootView: RootView())
+                w.contentView = NSHostingView(rootView: RootView()); w.titlebarAppearsTransparent = true; w.titleVisibility = .hidden
                 w.isReleasedWhenClosed = false
                 w.orderFrontRegardless()
                 try? await Task.sleep(for: .milliseconds(900))
@@ -394,6 +356,13 @@ struct MenuBarView: View {
                 }
                 w.close()
             }
+            let p = Store.shared.data.prefs.profile; Store.shared.data.prefs.profile = nil
+            let ww = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1240, height: 800), styleMask: [.titled, .fullSizeContentView], backing: .buffered, defer: false)
+            ww.isReleasedWhenClosed = false; ww.titlebarAppearsTransparent = true; ww.contentView = NSHostingView(rootView: RootView()); ww.orderFrontRegardless()
+            try? await Task.sleep(for: .milliseconds(700))
+            let ws = Process(); ws.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+            ws.arguments = ["-x", "-o", "-l\(ww.windowNumber)", "\(dir)/Welcome-\(dark ? "dark" : "light").png"]; try? ws.run(); ws.waitUntilExit(); ww.close()
+            Store.shared.data.prefs.profile = p
             for tab in MenuBarView.Tab.allCases {
                 let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 340, height: 460), styleMask: [.titled, .fullSizeContentView], backing: .buffered, defer: false)
                 w.isReleasedWhenClosed = false; w.contentView = NSHostingView(rootView: MenuBarView(tab: tab).bearingStyle().background(Color.surface))
@@ -554,6 +523,7 @@ struct MenuBarView: View {
     check(Account.call(spent: 2, planned: 20, pace: 20, weekly: 2, lowDays: 0).verdict.hasPrefix("You plan it, then skip"), "skipped plans are called out")
     check(Account.imbalance([("Book", .core, 2), ("Admin", .support, 9)])?.hasPrefix("Admin") == true && Account.imbalance([("Book", .core, 9), ("Admin", .support, 2)]) == nil, "support beating core is flagged")
     check(Coach.fallbackQuestions([Goal(title: "Run")]).allSatisfy { (2...4).contains($0.options.count) }, "fallback season questions have 2 to 4 options")
+    check(Profile(name: "Purv Taparia").initials == "PT" && Profile(email: "a@b.c").initials == "A", "profile initials")
     print(failed == 0 ? "ALL PASSED" : "\(failed) FAILED")
     exit(failed == 0 ? 0 : 1)
 }

@@ -90,7 +90,7 @@ struct GoogleError: LocalizedError { var code: Int, text: String; var errorDescr
             port.value = p
             var u = URLComponents(string: "https://accounts.google.com/o/oauth2/v2/auth")!
             u.queryItems = [.init(name: "client_id", value: id), .init(name: "redirect_uri", value: "http://127.0.0.1:\(p)/"), .init(name: "response_type", value: "code"),
-                            .init(name: "scope", value: "https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.calendarlist.readonly"),
+                            .init(name: "scope", value: "openid email profile https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.calendarlist.readonly"),
                             .init(name: "access_type", value: "offline"), .init(name: "prompt", value: "consent"), .init(name: "state", value: state),
                             .init(name: "code_challenge", value: GoogleCalendar.challenge(verifier)), .init(name: "code_challenge_method", value: "S256")]
             DispatchQueue.main.async { NSWorkspace.shared.open(u.url!) }
@@ -103,10 +103,16 @@ struct GoogleError: LocalizedError { var code: Int, text: String; var errorDescr
             guard let refresh = j["refresh_token"] as? String else { status = "Google didn't return a refresh token. Try again."; return }
             Keychain.set("google.refresh", refresh)
             connected = true
+            if let u = URL(string: "https://openidconnect.googleapis.com/v1/userinfo") {
+                var r = URLRequest(url: u); r.setValue("Bearer \(access)", forHTTPHeaderField: "Authorization")
+                let me = ((try? JSONSerialization.jsonObject(with: try await URLSession.shared.data(for: r).0)) as? [String: Any]) ?? [:]
+                Store.shared.data.prefs.profile = Profile(name: me["name"] as? String ?? "", email: me["email"] as? String ?? "")
+            }
             start()
         } catch { status = error.localizedDescription }
     }
 
+    func signOut() { disconnect(); Store.shared.data.prefs.profile = nil }
     func disconnect() {
         let refresh = Keychain.get("google.refresh")
         if !refresh.isEmpty, let u = URL(string: "https://oauth2.googleapis.com/revoke") {
