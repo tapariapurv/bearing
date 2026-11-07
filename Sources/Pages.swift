@@ -188,6 +188,7 @@ struct TodayPage: View {
                 Text(today.formatted(.dateTime.weekday(.wide).month(.wide).day())).font(.largeTitle.weight(.bold))
                 Text("\(d.seasonName): day \(store.seasonDay) of \(d.seasonWeeks * 7)").foregroundStyle(.secondary)
                 GoalBar(value: Double(store.seasonDay) / Double(max(1, d.seasonWeeks * 7)), color: .brand).frame(maxWidth: 320).padding(.top, 4)
+                DailyLoop().padding(.top, 10)
             }
             GoalStrip()
             HStack(alignment: .top, spacing: 16) {
@@ -606,7 +607,10 @@ struct BlockView: View {
     var body: some View {
         let c = store.goal(block.goalID).map { goalColor($0.color) } ?? .gray
         VStack(alignment: .leading, spacing: 0) {
-            Text(block.title).font(.caption.weight(.semibold)).lineLimit(2)
+            HStack(spacing: 3) {
+                if let e = block.energy { Image(systemName: e == .energizing ? "bolt.fill" : "battery.25percent").font(.system(size: 8)).accessibilityLabel(e.rawValue) }
+                Text(block.title).font(.caption.weight(.semibold)).lineLimit(2)
+            }
             if height > 34 { Text(block.start.clock).font(.caption2).opacity(0.8) }
             Spacer(minLength: 0)
         }
@@ -640,6 +644,11 @@ struct BlockView: View {
         .contextMenu {
             Button("Start Focus") { Focus.shared.begin(title: block.title, goal: block.goalID, task: block.taskID); Nav.shared.page = .focus }
             Button("Edit…") { editing = block }
+            Divider()
+            ForEach([Energy.energizing, .draining], id: \.self) { e in
+                Toggle(e.rawValue.capitalized, isOn: Binding(get: { block.energy == e }, set: { var b = block; b.energy = $0 ? e : nil; store.updateBlock(b) }))
+                    .keyboardShortcut(KeyEquivalent(e == .energizing ? "e" : "d"), modifiers: [])
+            }
             Divider()
             Button("Delete", role: .destructive) { store.deleteBlock(block) }
         }

@@ -355,6 +355,7 @@ struct Extracted: Decodable {
             o += "- [\(g.tier.rawValue)] \(g.title) | why: \(g.why) | done when: \(g.metric) | target \(g.weeklyHours)h/week | planned this week \(String(format: "%.1f", s.plannedHours(goal: g.id)))h | focused this week \(hm(s.focused(goal: g.id, since: now.startOfWeek))) | plan strength \(s.planStrength(g)) | notes: \(g.notes.prefix(200))\n"
         }
         if let qa = d.seasonQA, !qa.isEmpty { o += "Season setup answers:\n"; for x in qa { o += "- \(x.q) \(x.a)\n" } }
+        o += loopContext
         o += "Open tasks:\n"
         for t in d.tasks.filter({ !$0.done }).sorted(by: { $0.priority > $1.priority }).prefix(40) {
             o += "- \(t.title)\(s.goal(t.goalID).map { " [goal: \($0.title)]" } ?? "")\(t.due.map { " due \($0.dayKey)" } ?? "")\n"

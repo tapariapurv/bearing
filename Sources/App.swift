@@ -18,6 +18,8 @@ enum Page: String, CaseIterable, Identifiable {
     var page = Page.today
     var coachDraft = ""        // text waiting in the coach composer
     var seasonSetup = false
+    var dailySync = false
+    var reflect = false
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -125,6 +127,8 @@ struct RootView: View {
             PageView(page: nav.page).frame(maxWidth: .infinity, maxHeight: .infinity).background(Color.page).navigationTitle(nav.page.rawValue)
         }
         .sheet(isPresented: $nav.seasonSetup) { SeasonSetup().bearingStyle() }
+        .sheet(isPresented: $nav.dailySync) { DailySync().bearingStyle() }
+        .sheet(isPresented: $nav.reflect) { ReflectView().bearingStyle() }
         .bearingStyle()
     }
     @State private var showSupport = true
@@ -343,6 +347,8 @@ struct MenuBarView: View {
                  Goal(title: "Launch the newsletter", why: "Build an audience I own", metric: "1,000 subscribers", color: 1, weeklyHours: 3, status: .offTrack, coachNote: "Nothing is scheduled. Pick a first issue date, or drop this for the season.")]
         s.data.goals = g + [Goal(title: "Home admin", color: 4, weeklyHours: 1, level: .support)]
         s.data.goals[2].level = .secondary
+        s.data.plannedDay = now.dayKey
+        s.data.reflections = [Reflection(id: now.adding(days: -1).dayKey, ratings: [GoalRating(goal: g[0].id, rating: "Solid progress")])]
         s.data.tasks = [TaskItem(todoistID: "1", title: "Outline chapter 7", project: "Book", goalID: g[0].id, due: now, priority: 4),
                         TaskItem(title: "Book physio appointment", goalID: g[1].id, due: now.adding(days: 1)),
                         TaskItem(todoistID: "2", title: "Draft first newsletter issue", project: "Newsletter", goalID: g[2].id, priority: 3),
@@ -534,6 +540,8 @@ struct MenuBarView: View {
     qs.data.goals = [Goal(title: "S", level: .support), Goal(title: "B", level: .secondary), Goal(title: "A"), Goal(title: "X", archived: true)]
     check(qs.goals.map(\.title) == ["A", "B", "S"], "goals rank core, secondary, support and hide archived")
     qs.data.goals = keep
+    let ob = try? JSONDecoder().decode(Block.self, from: JSONEncoder().encode(Block(title: "b")))
+    check(ob?.energy == nil && Energy(rawValue: "draining") == .draining, "blocks without energy tags still load")
     check(Coach.fallbackQuestions([Goal(title: "Run")]).allSatisfy { (2...4).contains($0.options.count) }, "fallback season questions have 2 to 4 options")
     print(failed == 0 ? "ALL PASSED" : "\(failed) FAILED")
     exit(failed == 0 ? 0 : 1)

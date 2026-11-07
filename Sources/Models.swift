@@ -43,7 +43,12 @@ struct Block: Codable, Identifiable, Hashable {
     var goalID: UUID?
     var taskID: UUID?
     var eventID: String?       // macOS Calendar event
+    var energy: Energy?        // tagged during reflection
 }
+enum Energy: String, Codable { case energizing, draining }
+/// One goal's rating in a daily reflection.
+struct GoalRating: Codable, Hashable { var goal: UUID; var rating: String; var note = "" }
+struct Reflection: Codable, Identifiable, Hashable { var id: String; var ratings: [GoalRating] }   // id = day key reflected on
 struct Session: Codable, Identifiable, Hashable {
     var id = UUID()
     var title = ""
@@ -140,6 +145,8 @@ struct AppData: Codable {
     var projects: [String: String] = [:]
     var prefs = Prefs()
     var seasonQA: [QA]?        // answers from season setup
+    var reflections: [Reflection]?
+    var plannedDay: String?    // day key of the last daily sync
 }
 
 extension Date {
