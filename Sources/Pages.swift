@@ -542,15 +542,14 @@ struct DayColumn: View {
     @Binding var editing: Block?
     @State private var store = Store.shared
     @State private var cal = CalendarService.shared
-    @State private var targeted = false
+    @State private var slot: Int?
     private func y(_ d: Date) -> CGFloat { Self.y(d) }
     static func y(_ d: Date) -> CGFloat {
         let c = Calendar.current.dateComponents([.hour, .minute], from: d)
         return (CGFloat(c.hour ?? 0) + CGFloat(c.minute ?? 0) / 60 - CGFloat(WeekPage.firstHour)) * WeekPage.hourH
     }
     private func date(atY v: CGFloat) -> Date {
-        let quarters = (v / WeekPage.hourH * 4).rounded(.down)
-        return day.addingTimeInterval(Double(WeekPage.firstHour) * 3600 + Double(max(0, quarters)) * 900)
+        day.addingTimeInterval(Double(WeekPage.firstHour + max(0, Int(v / WeekPage.hourH))) * 3600)   // whole-hour slots
     }
     var body: some View {
         let _ = cal.revision
@@ -560,18 +559,22 @@ struct DayColumn: View {
                     Rectangle().fill(.clear).frame(height: WeekPage.hourH).overlay(alignment: .top) { Divider() }
                 }
             }
-            .background(targeted ? Color.brand.opacity(0.08) : .clear)
             .overlay(alignment: .leading) { Divider() }
             .contentShape(.rect)
             .gesture(SpatialTapGesture(count: 2).onEnded { v in
                 let s = date(atY: v.location.y)
                 editing = store.addBlock(Block(title: "New block", start: s, end: s.addingTimeInterval(3600)))
             })
-            .dropDestination(for: String.self) { items, loc in
-                guard let id = items.first.flatMap(UUID.init(uuidString:)), let t = store.task(id) else { return false }
-                store.block(task: t, at: date(atY: loc.y))
-                return true
-            } isTargeted: { targeted = $0 }
+            .onDrop(of: [.text], delegate: HourDrop(slot: $slot) { id, y in
+                if let t = store.task(id) { withAnimation(.spring(duration: 0.25, bounce: 0)) { store.block(task: t, at: date(atY: y)) } }
+            })
+            if let slot {
+                RoundedRectangle(cornerRadius: 8).fill(Color.action.opacity(0.1))
+                    .overlay { RoundedRectangle(cornerRadius: 8).strokeBorder(Color.action.opacity(0.5), style: .init(lineWidth: 1, dash: [4, 3])) }
+                    .overlay(alignment: .topLeading) { Text(hhmm(date(atY: CGFloat(slot) * WeekPage.hourH))).font(.caption2.weight(.semibold)).foregroundStyle(Color.action).padding(5) }
+                    .frame(width: colW - 6, height: WeekPage.hourH - 2).offset(x: 3, y: CGFloat(slot) * WeekPage.hourH + 1)
+                    .allowsHitTesting(false).transition(.opacity)
+            }
             ForEach(cal.events(from: day, to: day.adding(days: 1)).filter { !$0.allDay }) { e in
                 let goal = store.goal(store.data.prefs.eventGoals[e.id])
                 let c = goal.map { goalColor($0.color) } ?? e.color
@@ -581,6 +584,12 @@ struct DayColumn: View {
                 }.padding(6)
                     .frame(width: colW - 6, height: max(18, y(e.end) - y(e.start) - 2), alignment: .topLeading)
                     .background(c.wash, in: .rect(cornerRadius: 8)).foregroundStyle(c.ink)
+                    .modifier(HoverPeek {
+                        Text(e.title).font(.headline)
+                        PeekRow(icon: "clock", text: span(e.start, e.end))
+                        PeekRow(icon: "calendar", text: "From your calendar")
+                        if let goal { PeekRow(icon: "scope", text: "Counts toward \(goal.title)") }
+                    })
                     .offset(x: 3, y: y(e.start) + 1)
                     .contextMenu {
                         ForEach(store.goals) { g in Button("Counts toward \(g.title)") { store.data.prefs.eventGoals[e.id] = g.id } }
@@ -598,17 +607,79 @@ struct DayColumn: View {
         }
     }
 }
+/// Drop target that reports the hour under the pointer so the slot can light up.
+struct HourDrop: DropDelegate {
+    @Binding var slot: Int?
+    let drop: (UUID, CGFloat) -> Void
+    private func hour(_ i: DropInfo) -> Int { max(0, min(WeekPage.lastHour - WeekPage.firstHour - 1, Int(i.location.y / WeekPage.hourH))) }
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        let h = hour(info); if slot != h { withAnimation(.snappy(duration: 0.12)) { slot = h } }
+        return DropProposal(operation: .move)
+    }
+    func dropExited(info: DropInfo) { withAnimation(.easeOut(duration: 0.12)) { slot = nil } }
+    func performDrop(info: DropInfo) -> Bool {
+        let y = CGFloat(hour(info)) * WeekPage.hourH; slot = nil
+        guard let p = info.itemProviders(for: [.text]).first else { return false }
+        _ = p.loadObject(ofClass: NSString.self) { s, _ in
+            if let s = s as? String, let id = UUID(uuidString: s) { DispatchQueue.main.async { drop(id, y) } }
+        }
+        return true
+    }
+}
+
+/// Details that appear after resting the pointer on an item, and leave with it.
+struct HoverPeek<P: View>: ViewModifier {
+    var active = true
+    @ViewBuilder let peek: () -> P
+    @State private var shown = false
+    @State private var wait: Task<Void, Never>?
+    func body(content: Content) -> some View {
+        content
+            .onHover { inside in
+                wait?.cancel()
+                if inside { wait = Task { try? await Task.sleep(for: .milliseconds(450)); if !Task.isCancelled { shown = true } } } else { shown = false }
+            }
+            .popover(isPresented: Binding(get: { shown && active }, set: { shown = $0 }), arrowEdge: .trailing) {
+                VStack(alignment: .leading, spacing: 6) { peek() }.padding(12).frame(width: 240, alignment: .leading)
+            }
+    }
+}
+struct PeekRow: View {
+    let icon: String, text: String
+    var body: some View { Label(text, systemImage: icon).font(.callout).foregroundStyle(.secondary).lineLimit(2) }
+}
+func span(_ a: Date, _ b: Date) -> String { "\(hhmm(a)) – \(hhmm(b)) · \(hm(b.timeIntervalSince(a)))" }
+
 struct BlockView: View {
     let block: Block, colW: CGFloat, top: CGFloat, height: CGFloat
     @Binding var editing: Block?
     @State private var store = Store.shared
-    @State private var drag = CGSize.zero
+    @State private var drag = CGSize.zero      // follows the pointer 1:1
+    @State private var moving = false
     @State private var grow: CGFloat = 0
     @State private var detail = false
-    private static let quarter = WeekPage.hourH / 4
-    private func snap(_ v: CGFloat) -> CGFloat { (v / Self.quarter).rounded() * Self.quarter }
+    private static let step = WeekPage.hourH   // one-hour slots
+    private func snap(_ v: CGFloat) -> CGFloat { (v / Self.step).rounded() * Self.step }
+    private var target: CGSize { CGSize(width: (drag.width / colW).rounded() * colW, height: snap(drag.height)) }
     var body: some View {
         let c = store.goal(block.goalID).map { goalColor($0.color) } ?? .gray
+        let h = max(18, height + grow - 2)
+        ZStack(alignment: .topLeading) {
+            if moving {   // where it will land
+                RoundedRectangle(cornerRadius: 8).strokeBorder(c.opacity(0.7), style: .init(lineWidth: 1.5, dash: [4, 3]))
+                    .background(c.opacity(0.08), in: .rect(cornerRadius: 8))
+                    .frame(width: colW - 6, height: h).offset(x: 3 + target.width, y: top + 1 + target.height)
+                    .allowsHitTesting(false)
+            }
+            card(c, h)
+                .scaleEffect(moving ? 1.03 : 1)
+                .shadow(color: .black.opacity(moving ? 0.18 : 0), radius: moving ? 10 : 0, y: moving ? 6 : 0)
+                .animation(.snappy(duration: 0.15), value: moving)
+                .offset(x: 3 + drag.width, y: top + 1 + drag.height)
+        }
+        .zIndex(moving ? 1 : 0)
+    }
+    private func card(_ c: Color, _ h: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 3) {
                 if let e = block.energy { Image(systemName: e == .energizing ? "bolt.fill" : "battery.25percent").font(.system(size: 8)).accessibilityLabel(e.rawValue) }
@@ -619,18 +690,26 @@ struct BlockView: View {
         }
         .foregroundStyle(c.ink)
         .padding(6)
-        .frame(width: colW - 6, height: max(18, height + grow - 2), alignment: .topLeading)
+        .frame(width: colW - 6, height: h, alignment: .topLeading)
         .background(Color.surface, in: .rect(cornerRadius: 8))
         .overlay { RoundedRectangle(cornerRadius: 8).fill(c.opacity(0.22)).allowsHitTesting(false) }
         .overlay(alignment: .leading) { RoundedRectangle(cornerRadius: 2).fill(c).frame(width: 3).padding(.vertical, 4).padding(.leading, 2).allowsHitTesting(false) }
+        .modifier(HoverPeek(active: !moving && !detail && grow == 0) {
+            Text(block.title).font(.headline)
+            PeekRow(icon: "clock", text: span(block.start, block.end))
+            if let g = store.goal(block.goalID) { PeekRow(icon: "scope", text: g.title) }
+            if let e = block.energy { PeekRow(icon: e == .energizing ? "bolt.fill" : "battery.25percent", text: e.rawValue.capitalized) }
+            if let d = block.done { PeekRow(icon: d ? "checkmark.circle.fill" : "xmark.circle", text: d ? "Done" : "Not done") }
+            Text("Click for details · drag to move").font(.caption).foregroundStyle(.tertiary)
+        })
         .popover(isPresented: $detail, arrowEdge: .trailing) { BlockDetail(block: block, editing: $editing, shown: $detail) }
         .overlay(alignment: .bottom) {
             Color.clear.frame(height: 8).contentShape(.rect)
                 .onHover { $0 ? NSCursor.resizeUpDown.push() : NSCursor.pop() }
                 .gesture(DragGesture(coordinateSpace: .global)
-                    .onChanged { grow = max(Self.quarter - height, snap($0.translation.height)) }
+                    .onChanged { v in withAnimation(.snappy(duration: 0.12)) { grow = max(Self.step - height, snap(v.translation.height)) } }
                     .onEnded { _ in
-                        var b = block; b.end = b.end.addingTimeInterval(Double(grow / Self.quarter) * 900); grow = 0
+                        var b = block; b.end = b.end.addingTimeInterval(Double(grow / Self.step) * 3600); grow = 0
                         store.updateBlock(b)
                     })
         }
@@ -638,13 +717,13 @@ struct BlockView: View {
         .onTapGesture(count: 2) { editing = block }
         .onTapGesture { detail = true }
         .gesture(DragGesture(minimumDistance: 4, coordinateSpace: .global)
-            .onChanged { drag = CGSize(width: ($0.translation.width / colW).rounded() * colW, height: snap($0.translation.height)) }
+            .onChanged { drag = $0.translation; if !moving { moving = true; NSCursor.closedHand.push() } }
             .onEnded { _ in
-                let days = Int((drag.width / colW).rounded()), mins = Double(drag.height / Self.quarter) * 900
+                NSCursor.pop()
+                let t = target, days = Int((t.width / colW).rounded()), secs = Double(t.height / Self.step) * 3600
                 var b = block
-                b.start = b.start.adding(days: days).addingTimeInterval(mins); b.end = b.end.adding(days: days).addingTimeInterval(mins)
-                drag = .zero
-                store.updateBlock(b)
+                b.start = b.start.adding(days: days).addingTimeInterval(secs); b.end = b.end.adding(days: days).addingTimeInterval(secs)
+                withAnimation(.spring(duration: 0.25, bounce: 0)) { moving = false; drag = .zero; if t != .zero { store.updateBlock(b) } }
             })
         .contextMenu {
             Button("Start Focus") { Focus.shared.begin(title: block.title, goal: block.goalID, task: block.taskID); Nav.shared.page = .focus }
@@ -657,9 +736,6 @@ struct BlockView: View {
             Divider()
             Button("Delete", role: .destructive) { store.deleteBlock(block) }
         }
-        .offset(x: 3 + drag.width, y: top + 1 + drag.height)
-        .zIndex(drag == .zero ? 0 : 1)
-        .animation(.spring(duration: 0.2, bounce: 0), value: drag)
     }
 }
 struct BlockEditor: View {
@@ -859,11 +935,11 @@ struct CoachPage: View {
     @State private var voice = Voice.shared
     @State private var transcribing = false
     @State private var extracted: Extracted?
-    private let starters = ["What should I change this week?", "Which goal should I drop?", "Review my last week honestly", "I'm overwhelmed. Help me choose."]
+    private let starters = ["Plan my afternoon", "Reschedule what I didn't finish", "Which goal should I drop?", "Write a one-page plan for my top goal"]
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 2) {
-                Text("Coach").font(.system(size: 15, weight: .semibold))
+                Text(nav.side ? "Coach" : "AI Assistant").font(.system(size: 15, weight: .semibold))
                 Spacer()
                 IconButton(icon: "target", label: "Turn into goals") { adopt() }.disabled(store.data.chat.isEmpty || busy)
                 IconButton(icon: "square.and.pencil", label: "New chat") { store.data.chat = [] }.disabled(store.data.chat.isEmpty)
@@ -890,7 +966,7 @@ struct CoachPage: View {
                                     Text(m.text).textSelection(.enabled).foregroundStyle(Color.onBrand).padding(.horizontal, 14).padding(.vertical, 9)
                                         .background(Color.brand, in: .rect(cornerRadius: 18))
                                 } else {
-                                    Text(m.text.isEmpty ? "…" : m.text).textSelection(.enabled).lineSpacing(3)
+                                    reply(m)
                                 }
                                 if m.role != "user" { Spacer(minLength: 80) }
                             }.id(m.id)
@@ -901,7 +977,7 @@ struct CoachPage: View {
             }
             ErrorText(text: error).padding(.horizontal, 20)
             HStack(alignment: .bottom, spacing: 8) {
-                TextField(transcribing ? "Transcribing…" : "Ask your coach…", text: $nav.coachDraft, axis: .vertical).textFieldStyle(.plain).lineLimit(1...5)
+                TextField(transcribing ? "Transcribing…" : "Ask anything, or tell it what to change…", text: $nav.coachDraft, axis: .vertical).textFieldStyle(.plain).lineLimit(1...5)
                     .onSubmit { send() }.padding(.vertical, 6)
                 Button { toggleVoice() } label: { Image(systemName: voice.recording ? "stop.circle.fill" : "mic").foregroundStyle(voice.recording ? .red : .secondary).frame(width: 28, height: 28) }
                     .buttonStyle(.plain).accessibilityLabel(voice.recording ? "Stop recording" : "Record a message").disabled(transcribing)
@@ -917,12 +993,12 @@ struct CoachPage: View {
         guard !t.isEmpty, !busy else { return }
         nav.coachDraft = ""; error = nil; busy = true
         store.data.chat.append(ChatMsg(role: "user", text: t))
-        let history = Array(store.data.chat.suffix(30))
+        let history = Array(store.data.chat.suffix(12))   // recent turns only; the context carries the rest
         let reply = ChatMsg(role: "assistant", text: "")
         store.data.chat.append(reply)
         Task {
             do {
-                try await AI.stream(system: Coach.system, messages: history) { tok in
+                try await AI.stream(system: Coach.system + "\n\n" + Coach.actionGuide, messages: history) { tok in
                     if let i = store.data.chat.firstIndex(where: { $0.id == reply.id }) { store.data.chat[i].text += tok }
                 }
             } catch {
@@ -930,6 +1006,25 @@ struct CoachPage: View {
                 store.data.chat.removeAll { $0.id == reply.id && $0.text.isEmpty }
             }
             busy = false
+        }
+    }
+    private func reply(_ m: ChatMsg) -> some View {
+        let (text, actions) = Coach.split(m.text)
+        return VStack(alignment: .leading, spacing: 10) {
+            Text(text.isEmpty ? "…" : (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(text))
+                .textSelection(.enabled).lineSpacing(3)
+            if let actions, !actions.lines.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(actions.lines, id: \.self) { Label($0, systemImage: "calendar.badge.plus").font(.callout) }
+                    if m.applied == true { Label("Applied", systemImage: "checkmark.circle.fill").foregroundStyle(Color.good).font(.callout.weight(.medium)) }
+                    else {
+                        Button("Apply") {
+                            Coach.perform(actions)
+                            if let i = store.data.chat.firstIndex(where: { $0.id == m.id }) { store.data.chat[i].applied = true }
+                        }.buttonStyle(PillButton())
+                    }
+                }.padding(12).frame(maxWidth: .infinity, alignment: .leading).background(Color.primary.opacity(0.04), in: .rect(cornerRadius: 14))
+            }
         }
     }
     private func adopt() {

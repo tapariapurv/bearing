@@ -340,7 +340,35 @@ struct Extracted: Decodable {
     var compass: String?; var goals: [G]?; var tasks: [T]?
 }
 
+/// What the AI may do from chat. Sent back only when asked, so plain answers cost nothing extra.
+struct AIActions: Decodable {
+    struct Note: Decodable { var title: String; var body: String }
+    var changes: [PlanChange]?; var tasks: [Extracted.T]?; var notes: [Note]?
+    var lines: [String] {
+        (changes ?? []).map { "\($0.action.capitalized) \($0.title)\($0.day.map { " · \($0)" } ?? "")\($0.start.map { " \($0)" } ?? "")" }
+            + (tasks ?? []).map { "New task: \($0.title)" } + (notes ?? []).map { "New note: \($0.title)" }
+    }
+}
+
 @MainActor enum Coach {
+    static let actionGuide = """
+    You can act on the person's schedule. Only when they ask you to change, plan, reschedule, add or create something, end your reply with one block:
+    <actions>{"changes":[{"action":"add|move|remove","title":"...","goal":"exact goal title or null","blockId":"id for move/remove","day":"yyyy-MM-dd","start":"HH:mm","minutes":60}],"tasks":[{"title":"...","goal":"..."}],"notes":[{"title":"...","body":"markdown"}]}</actions>
+    Omit empty keys. Start times on the hour. Never overlap events. Keep the prose before it to one or two sentences; they will review and apply it.
+    """
+    /// Splits a reply into what to show and the actions it carries.
+    static func split(_ text: String) -> (String, AIActions?) {
+        guard let a = text.range(of: "<actions>") else { return (text, nil) }
+        let rest = text[a.upperBound...], b = rest.range(of: "</actions>")
+        let json = String(b.map { rest[..<$0.lowerBound] } ?? rest)
+        return (String(text[..<a.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines), b == nil ? nil : extractJSON(AIActions.self, from: json))
+    }
+    static func perform(_ x: AIActions) {
+        let s = Store.shared
+        apply(x.changes ?? [])
+        for t in x.tasks ?? [] { s.addTask(t.title, goal: s.goals.first { $0.title == t.goal }?.id) }
+        for n in x.notes ?? [] { s.data.captures.insert(Capture(title: n.title, source: "AI", text: n.body), at: 0) }
+    }
     static let persona = """
     You are the Bearing coach: a direct but kind productivity coach. Name problems plainly, propose one specific change, and ask for approval. \
     Principles: Goal, Plan, System: productivity means moving toward goals that matter, enjoyably and efficiently. Fewer goals, done better; \

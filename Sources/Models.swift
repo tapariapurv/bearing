@@ -44,11 +44,12 @@ struct Block: Codable, Identifiable, Hashable {
     var taskID: UUID?
     var eventID: String?       // macOS Calendar event
     var energy: Energy?        // tagged during reflection
+    var done: Bool?            // marked during reflection
 }
 enum Energy: String, Codable { case energizing, draining }
 /// One goal's rating in a daily reflection.
 struct GoalRating: Codable, Hashable { var goal: UUID; var rating: String; var note = "" }
-struct Reflection: Codable, Identifiable, Hashable { var id: String; var ratings: [GoalRating] }   // id = day key reflected on
+struct Reflection: Codable, Identifiable, Hashable { var id: String; var ratings: [GoalRating]; var missed: [String]? = nil }   // id = day key reflected on
 struct Session: Codable, Identifiable, Hashable {
     var id = UUID()
     var title = ""
@@ -74,6 +75,7 @@ struct ChatMsg: Codable, Identifiable, Hashable {
     var id = UUID()
     var role: String           // user | assistant
     var text: String
+    var applied: Bool?         // AI actions in this reply were applied
 }
 struct Capture: Codable, Identifiable, Hashable {
     var id = UUID()

@@ -20,7 +20,7 @@ extension Coach {
         let r = (d.reflections ?? []).sorted { $0.id > $1.id }.prefix(7)
         if !r.isEmpty {
             o += "Recent reflections (progress per goal):\n"
-            for x in r { o += "- \(x.id): " + x.ratings.compactMap { g in s.goal(g.goal).map { "\($0.title) = \(g.rating)\(g.note.isEmpty ? "" : " (\(g.note))")" } }.joined(separator: "; ") + "\n" }
+            for x in r { o += "- \(x.id): " + x.ratings.compactMap { g in s.goal(g.goal).map { "\($0.title) = \(g.rating)\(g.note.isEmpty ? "" : " (\(g.note))")" } }.joined(separator: "; ") + ((x.missed ?? []).isEmpty ? "" : " | NOT DONE: " + x.missed!.joined(separator: ", ")) + "\n" }
         }
         let since = Date().adding(days: -14)
         let tagged = d.blocks.filter { $0.energy != nil && $0.start > since }
@@ -200,14 +200,16 @@ struct ReflectView: View {
     }
     private var energyStep: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Which blocks gave you energy?").font(.title2.weight(.bold))
-            Text("Press E for energizing, D for draining. Arrow keys move between blocks.").foregroundStyle(.secondary)
+            Text("How did \(dayName)'s blocks go?").font(.title2.weight(.bold))
+            Text("Y done, N not done, E energizing, D draining. Arrows move. Anything not done goes to your AI to reschedule.").foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             VStack(spacing: 6) {
                 ForEach(Array(blocks.enumerated()), id: \.element.id) { i, b in
                     HStack(spacing: 10) {
                         Text(b.start.clock).font(.caption).monospacedDigit().foregroundStyle(.secondary).frame(width: 64, alignment: .leading)
-                        Text(b.title).lineLimit(1)
+                        Text(b.title).lineLimit(1).strikethrough(b.done == true, color: .secondary)
                         Spacer()
+                        mark(b, true); mark(b, false)
+                        Divider().frame(height: 16)
                         tag(b, .energizing, "E", "bolt.fill")
                         tag(b, .draining, "D", "battery.25percent")
                     }
@@ -219,9 +221,13 @@ struct ReflectView: View {
             .focusable().focused($energyFocus).focusEffectDisabled()
             .onKeyPress(.upArrow) { current = max(0, current - 1); return .handled }
             .onKeyPress(.downArrow) { current = min(blocks.count - 1, current + 1); return .handled }
-            .onKeyPress(characters: .init(charactersIn: "edED")) { k in
+            .onKeyPress(characters: .init(charactersIn: "edynEDYN")) { k in
                 guard blocks.indices.contains(current) else { return .ignored }
-                set(blocks[current], k.characters.lowercased() == "e" ? .energizing : .draining)
+                switch k.characters.lowercased() {
+                case "y": done(blocks[current], true)
+                case "n": done(blocks[current], false)
+                default: set(blocks[current], k.characters.lowercased() == "e" ? .energizing : .draining)
+                }
                 current = min(blocks.count - 1, current + 1); return .handled
             }
             .onAppear { energyFocus = true }
@@ -236,12 +242,29 @@ struct ReflectView: View {
                 .background(on ? Color.brand : Color.primary.opacity(0.06), in: .capsule)
         }.buttonStyle(.plain).help("\(e.rawValue.capitalized) (\(key))").accessibilityAddTraits(on ? .isSelected : [])
     }
+    private func mark(_ b: Block, _ d: Bool) -> some View {
+        let on = b.done == d
+        return Button { done(b, d) } label: {
+            Image(systemName: d ? "checkmark" : "xmark").font(.caption.weight(.bold)).frame(width: 26, height: 22)
+                .foregroundStyle(on ? Color.white : .secondary)
+                .background(on ? (d ? Color.good : Color.now) : Color.primary.opacity(0.06), in: .capsule)
+        }.buttonStyle(.plain).help(d ? "Done (Y)" : "Not done (N)").accessibilityLabel(d ? "Done" : "Not done").accessibilityAddTraits(on ? .isSelected : [])
+    }
+    private func done(_ b: Block, _ d: Bool) {
+        var b = b; b.done = b.done == d ? nil : d; store.updateBlock(b)
+        if let t = store.task(b.taskID), t.done != (b.done == true) { store.toggleDone(t) }   // keep the linked task in step
+    }
     private func set(_ b: Block, _ e: Energy) { var b = b; b.energy = b.energy == e ? nil : e; store.updateBlock(b) }
+    static func missed(_ blocks: [Block]) -> [String] { blocks.filter { $0.done == false }.map(\.title) }
     private func save() {
         var all = store.data.reflections ?? []
         all.removeAll { $0.id == Self.day.dayKey }
-        all.append(Reflection(id: Self.day.dayKey, ratings: ratings.filter { !$0.rating.isEmpty }))
+        let missed = Self.missed(blocks)
+        all.append(Reflection(id: Self.day.dayKey, ratings: ratings.filter { !$0.rating.isEmpty }, missed: missed.isEmpty ? nil : missed))
         store.data.reflections = all
+        if !missed.isEmpty {   // hand it to the AI as a local message: no tokens until the person replies
+            store.data.chat.append(ChatMsg(role: "assistant", text: "From \(dayName)'s reflection, these didn't get done:\n" + missed.map { "• " + $0 }.joined(separator: "\n") + "\n\nWant me to find new time for them? Say \"reschedule\" and I'll propose blocks you can apply."))
+        }
         dismiss()
     }
 }

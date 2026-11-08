@@ -55,7 +55,8 @@ struct Shell: View {
             }.frame(height: 32).padding(.top, 6)
             HStack(spacing: 8) {
                 if nav.showTasks { TasksPanel().frame(width: 272).panel() }
-                PageView(page: nav.page).frame(maxWidth: .infinity, maxHeight: .infinity).panel()
+                PageView(page: nav.page).id(nav.page).transition(.opacity).frame(maxWidth: .infinity, maxHeight: .infinity).panel()
+                    .animation(.easeOut(duration: 0.14), value: nav.page)
                 if nav.side { CoachPage().frame(width: 360).panel() }
                 else if nav.page == .today { DayPanel().frame(width: 290).panel() }
             }
@@ -69,21 +70,23 @@ struct Shell: View {
 /// Day, Week, Goals and Focus: icons, with the selected one labelled in a raised pill.
 struct ModeSwitch: View {
     @State private var nav = Nav.shared
-    private let modes: [(page: Page, title: String, icon: String)] = [(.today, "Day", "doc.text"), (.week, "Week", "rectangle.split.3x1"), (.goals, "Goals", "scope"), (.focus, "Focus", "timer")]
+    @Namespace private var pill
+    private let modes: [(page: Page, title: String, icon: String)] = [(.today, "Day", "doc.text"), (.week, "Week", "rectangle.split.3x1"), (.goals, "Goals", "scope"), (.focus, "Focus", "timer"), (.coach, "AI", "sparkles")]
     var body: some View {
         HStack(spacing: 2) {
             ForEach(modes, id: \.page) { m in
                 let on = nav.page == m.page
-                Button { nav.page = m.page } label: {
+                Button { nav.page = m.page; if m.page == .coach { nav.side = false } } label: {
                     HStack(spacing: 5) { Image(systemName: m.icon); if on { Text(m.title) } }
                         .font(.system(size: 12, weight: on ? .semibold : .medium)).foregroundStyle(on ? Color.primary : .secondary)
                         .padding(.horizontal, on ? 11 : 9).frame(height: 26)
-                        .background { if on { Capsule().fill(Color.surface).shadow(color: .black.opacity(0.08), radius: 2, y: 1) } }
+                        .background { if on { Capsule().fill(Color.surface).shadow(color: .black.opacity(0.08), radius: 2, y: 1).matchedGeometryEffect(id: "pill", in: pill) } }
                         .contentShape(.capsule)
                 }.buttonStyle(.plain).help(m.title).accessibilityLabel(m.title).accessibilityAddTraits(on ? .isSelected : [])
             }
         }
         .padding(3).background(Color.primary.opacity(0.06), in: .capsule)
+        .animation(.spring(duration: 0.22, bounce: 0), value: nav.page)   // only the pill slides
     }
 }
 
@@ -234,7 +237,12 @@ struct TasksPanel: View {
             }
         }
         .padding(.leading, 33).padding(.vertical, 5).contentShape(.rect)
-        .draggable(t.id.uuidString)
+        .draggable(t.id.uuidString) {   // a 1-hour block preview, the size it will land as
+            Text(t.title).font(.caption.weight(.semibold)).lineLimit(2).padding(8)
+                .frame(width: 150, height: WeekPage.hourH, alignment: .topLeading)
+                .background(Color.surface, in: .rect(cornerRadius: 8))
+                .overlay(alignment: .leading) { RoundedRectangle(cornerRadius: 2).fill(store.goal(t.goalID).map { goalColor($0.color) } ?? .gray).frame(width: 3).padding(.vertical, 4).padding(.leading, 2) }
+        }
         .contextMenu {
             Button("Start Focus") { Focus.shared.begin(title: t.title, goal: t.goalID, task: t.id); Nav.shared.page = .focus }
             Button("Time Block Next Free Hour") { store.block(task: t, at: store.nextFreeSlot()) }

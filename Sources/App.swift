@@ -380,6 +380,11 @@ struct MenuBarView: View {
 @MainActor func selfTest() {
     func check(_ ok: Bool, _ name: String) { print(ok ? "ok   " : "FAIL ", name); if !ok { failed += 1 } }
     var failed = 0
+    // AI actions split out of a reply; reflection misses
+    let (aiShown, acts) = Coach.split("Done.\n<actions>{\"tasks\":[{\"title\":\"Call Sam\"}],\"changes\":[{\"action\":\"add\",\"title\":\"Write\",\"day\":\"2026-01-05\",\"start\":\"09:00\"}]}</actions>")
+    check(aiShown == "Done." && acts?.tasks?.first?.title == "Call Sam" && acts?.changes?.count == 1 && Coach.split("Hi").1 == nil, "AI actions parse")
+    var nb = Block(title: "Gym"); nb.done = false
+    check(ReflectView.missed([nb, Block(title: "Read")]) == ["Gym"], "reflection collects not-done blocks")
     // Todoist merge
     var d = AppData()
     var local = TaskItem(todoistID: "temp1", title: "Made here")
