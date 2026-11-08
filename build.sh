@@ -3,7 +3,7 @@
 # ./build.sh [--open] [--dmg] [--test]
 set -euo pipefail
 cd "$(dirname "$0")"
-V=1.4.0
+V=1.4.1
 A="$HOME/Applications/Bearing.app"
 B="build/Bearing"
 mkdir -p build

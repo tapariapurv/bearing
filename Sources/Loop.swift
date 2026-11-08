@@ -43,7 +43,7 @@ struct DailyLoop: View {
     }
     private func step(_ t: String, _ icon: String, _ done: Bool, _ act: @escaping () -> Void) -> some View {
         Button(action: act) {
-            Label(t, systemImage: done ? "checkmark.circle.fill" : icon).font(.callout.weight(.medium))
+            Label(t, systemImage: done ? "checkmark.circle.fill" : icon).font(.callout.weight(.medium)).lineLimit(1).fixedSize()
                 .foregroundStyle(done ? Color.secondary : Color.primary)
         }.accessibilityValue(done ? "Done" : "Not done")
     }

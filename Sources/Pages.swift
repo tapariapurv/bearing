@@ -247,7 +247,7 @@ struct Trajectory: View {
             RectangleMark(yStart: .value("From", 0), yEnd: .value("To", target / 2)).foregroundStyle(GoalStatus.offTrack.color.opacity(0.08))
             ForEach(hours, id: \.0) { BarMark(x: .value("Week", $0.0), y: .value("Hours", $0.1), width: .fixed(14)).foregroundStyle(goalColor(goal.color)).cornerRadius(3) }
             RuleMark(y: .value("Target", goal.weeklyHours)).foregroundStyle(.secondary).lineStyle(.init(lineWidth: 1, dash: [4, 3]))
-                .annotation(position: .top, alignment: .trailing) { Text("Target \(String(format: "%g", goal.weeklyHours))h").font(.caption2).foregroundStyle(.secondary) }
+                .annotation(position: .top, alignment: .trailing, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) { Text("Target \(String(format: "%g", goal.weeklyHours))h").font(.caption2).foregroundStyle(.secondary) }
         }
         .chartXScale(domain: 0...(weeks + 1)).chartYScale(domain: 0...top)
         .chartXAxis { AxisMarks(values: .stride(by: 2)) }
@@ -481,10 +481,14 @@ struct WeekPage: View {
         GeometryReader { geo in
             let colW = (geo.size.width - Self.gutter) / CGFloat(dayMode ? 2 : 7)
             HStack(spacing: 0) {
-                VStack(spacing: 0) {
-                    ForEach(Self.firstHour..<Self.lastHour, id: \.self) { h in
-                        Text(h == 0 ? "" : String(format: "%02d:00", h)).font(.caption2).monospacedDigit().foregroundStyle(.secondary)
-                            .frame(width: Self.gutter - 8, height: Self.hourH, alignment: .topTrailing).offset(y: -6).id(h)
+                TimelineView(.periodic(from: .now, by: 60)) { t in
+                    let nowY = days.contains(where: Calendar.current.isDateInToday) ? DayColumn.y(t.date) : -100
+                    VStack(spacing: 0) {
+                        ForEach(Self.firstHour..<Self.lastHour, id: \.self) { h in
+                            Text(h == 0 ? "" : String(format: "%02d:00", h)).font(.caption2).monospacedDigit().foregroundStyle(.secondary)
+                                .opacity(abs(nowY - CGFloat(h - Self.firstHour) * Self.hourH) < 12 ? 0 : 1)   // the now badge sits here
+                                .frame(width: Self.gutter - 8, height: Self.hourH, alignment: .topTrailing).offset(y: -6).id(h)
+                        }
                     }
                 }.padding(.trailing, 8)
                 ForEach(days, id: \.self) { d in DayColumn(day: d, colW: colW, editing: $editing).frame(width: colW) }
@@ -548,6 +552,17 @@ struct DayColumn: View {
         let c = Calendar.current.dateComponents([.hour, .minute], from: d)
         return (CGFloat(c.hour ?? 0) + CGFloat(c.minute ?? 0) / 60 - CGFloat(WeekPage.firstHour)) * WeekPage.hourH
     }
+    /// Side-by-side lanes for overlapping items: id -> (lane, lanes in its overlap group).
+    static func lanes(_ items: [(String, Date, Date)]) -> [String: (Int, Int)] {
+        var out: [String: (Int, Int)] = [:], group: [(String, Int)] = [], ends: [Date] = [], groupEnd = Date.distantPast
+        func flush() { for (id, l) in group { out[id] = (l, ends.count) }; group = []; ends = [] }
+        for (id, s, e) in items.sorted(by: { $0.1 < $1.1 }) {
+            if s >= groupEnd { flush() }
+            if let l = ends.firstIndex(where: { $0 <= s }) { ends[l] = e; group.append((id, l)) } else { ends.append(e); group.append((id, ends.count - 1)) }
+            groupEnd = max(groupEnd, e)
+        }
+        flush(); return out
+    }
     private func date(atY v: CGFloat) -> Date {
         day.addingTimeInterval(Double(WeekPage.firstHour + max(0, Int(v / WeekPage.hourH))) * 3600)   // whole-hour slots
     }
@@ -575,14 +590,18 @@ struct DayColumn: View {
                     .frame(width: colW - 6, height: WeekPage.hourH - 2).offset(x: 3, y: CGFloat(slot) * WeekPage.hourH + 1)
                     .allowsHitTesting(false).transition(.opacity)
             }
-            ForEach(cal.events(from: day, to: day.adding(days: 1)).filter { !$0.allDay }) { e in
+            let events = cal.events(from: day, to: day.adding(days: 1)).filter { !$0.allDay }
+            let blocks = store.blocks(on: day)
+            let lane = Self.lanes(events.map { ($0.id, $0.start, $0.end) } + blocks.map { ($0.id.uuidString, $0.start, $0.end) })
+            ForEach(events) { e in
                 let goal = store.goal(store.data.prefs.eventGoals[e.id])
                 let c = goal.map { goalColor($0.color) } ?? e.color
+                let l = lane[e.id] ?? (0, 1), w = colW / CGFloat(l.1)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(e.title).font(.caption.weight(.semibold)).lineLimit(2)
                     if y(e.end) - y(e.start) > 34 { Text("\(hhmm(e.start)) - \(hhmm(e.end))").font(.caption2).opacity(0.8) }
                 }.padding(6)
-                    .frame(width: colW - 6, height: max(18, y(e.end) - y(e.start) - 2), alignment: .topLeading)
+                    .frame(width: w - 6, height: max(18, y(e.end) - y(e.start) - 2), alignment: .topLeading)
                     .background(c.wash, in: .rect(cornerRadius: 8)).foregroundStyle(c.ink)
                     .modifier(HoverPeek {
                         Text(e.title).font(.headline)
@@ -590,13 +609,13 @@ struct DayColumn: View {
                         PeekRow(icon: "calendar", text: "From your calendar")
                         if let goal { PeekRow(icon: "scope", text: "Counts toward \(goal.title)") }
                     })
-                    .offset(x: 3, y: y(e.start) + 1)
+                    .offset(x: 3 + CGFloat(l.0) * w, y: y(e.start) + 1)
                     .contextMenu {
                         ForEach(store.goals) { g in Button("Counts toward \(g.title)") { store.data.prefs.eventGoals[e.id] = g.id } }
                         if goal != nil { Button("Remove Goal") { store.data.prefs.eventGoals[e.id] = nil } }
                     }
             }
-            ForEach(store.blocks(on: day)) { b in BlockView(block: b, colW: colW, top: y(b.start), height: y(b.end) - y(b.start), editing: $editing) }
+            ForEach(blocks) { b in BlockView(block: b, colW: colW, top: y(b.start), height: y(b.end) - y(b.start), lane: lane[b.id.uuidString] ?? (0, 1), editing: $editing) }
             if Calendar.current.isDateInToday(day) {
                 TimelineView(.periodic(from: .now, by: 60)) { t in
                     Rectangle().fill(Color.now).frame(width: colW, height: 1.5)
@@ -652,7 +671,10 @@ func span(_ a: Date, _ b: Date) -> String { "\(hhmm(a)) – \(hhmm(b)) · \(hm(b
 
 struct BlockView: View {
     let block: Block, colW: CGFloat, top: CGFloat, height: CGFloat
+    var lane = (0, 1)
     @Binding var editing: Block?
+    private var w: CGFloat { colW / CGFloat(lane.1) }
+    private var x: CGFloat { 3 + CGFloat(lane.0) * w }
     @State private var store = Store.shared
     @State private var drag = CGSize.zero      // follows the pointer 1:1
     @State private var moving = false
@@ -668,14 +690,14 @@ struct BlockView: View {
             if moving {   // where it will land
                 RoundedRectangle(cornerRadius: 8).strokeBorder(c.opacity(0.7), style: .init(lineWidth: 1.5, dash: [4, 3]))
                     .background(c.opacity(0.08), in: .rect(cornerRadius: 8))
-                    .frame(width: colW - 6, height: h).offset(x: 3 + target.width, y: top + 1 + target.height)
+                    .frame(width: w - 6, height: h).offset(x: x + target.width, y: top + 1 + target.height)
                     .allowsHitTesting(false)
             }
             card(c, h)
                 .scaleEffect(moving ? 1.03 : 1)
                 .shadow(color: .black.opacity(moving ? 0.18 : 0), radius: moving ? 10 : 0, y: moving ? 6 : 0)
                 .animation(.snappy(duration: 0.15), value: moving)
-                .offset(x: 3 + drag.width, y: top + 1 + drag.height)
+                .offset(x: x + drag.width, y: top + 1 + drag.height)
         }
         .zIndex(moving ? 1 : 0)
     }
@@ -690,7 +712,7 @@ struct BlockView: View {
         }
         .foregroundStyle(c.ink)
         .padding(6)
-        .frame(width: colW - 6, height: h, alignment: .topLeading)
+        .frame(width: w - 6, height: h, alignment: .topLeading)
         .background(Color.surface, in: .rect(cornerRadius: 8))
         .overlay { RoundedRectangle(cornerRadius: 8).fill(c.opacity(0.22)).allowsHitTesting(false) }
         .overlay(alignment: .leading) { RoundedRectangle(cornerRadius: 2).fill(c).frame(width: 3).padding(.vertical, 4).padding(.leading, 2).allowsHitTesting(false) }
@@ -807,7 +829,7 @@ struct FocusPage: View {
         let tint = store.goal(focus.goalID).map { goalColor($0.color) } ?? Color.brand
         let ring = focus.phase == .rest && focus.active ? goalPalette[4] : tint
         Scroll {
-            Card(accent: tint) {
+            Card(accent: store.goal(focus.goalID).map { goalColor($0.color) }) {
                 VStack(spacing: 14) {
                     if focus.active {
                         Text(focus.phase == .rest ? "Break" : (focus.title.isEmpty ? "Focus" : focus.title)).font(.title3.weight(.semibold))

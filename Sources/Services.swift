@@ -169,7 +169,9 @@ struct CalEvent: Identifiable, Hashable { var id: String, title: String, start: 
     static let shared = CalendarService()
     let ek = EKEventStore()
     var granted = EKEventStore.authorizationStatus(for: .event) == .fullAccess
-    var revision = 0
+    var revision = 0 { didSet { ekCache = [:] } }
+    /// EventKit queries are slow and the grid asks once per column per redraw; reuse until the store changes.
+    @ObservationIgnored private var ekCache: [ClosedRange<Date>: [CalEvent]] = [:]
 
     func request() async {
         granted = (try? await ek.requestFullAccessToEvents()) ?? false
@@ -190,9 +192,11 @@ struct CalEvent: Identifiable, Hashable { var id: String, title: String, start: 
         var out: [CalEvent] = []
         func add(_ e: CalEvent) { if !linked.contains(e.id), seen.insert("\(e.title)|\(e.start.timeIntervalSince1970)").inserted { out.append(e) } }
         if granted {
-            ek.events(matching: ek.predicateForEvents(withStart: from, end: to, calendars: nil)).forEach {
-                add(CalEvent(id: $0.eventIdentifier ?? UUID().uuidString, title: $0.title ?? "Busy", start: $0.startDate, end: $0.endDate, allDay: $0.isAllDay, color: Color(cgColor: $0.calendar.cgColor)))
+            let k = from...max(from, to)
+            let local = ekCache[k] ?? ek.events(matching: ek.predicateForEvents(withStart: from, end: to, calendars: nil)).map {
+                CalEvent(id: $0.eventIdentifier ?? UUID().uuidString, title: $0.title ?? "Busy", start: $0.startDate, end: $0.endDate, allDay: $0.isAllDay, color: Color(cgColor: $0.calendar.cgColor))
             }
+            ekCache[k] = local; local.forEach(add)
         }
         let g = GoogleCalendar.shared
         let colors = Dictionary(g.calendars.map { ($0.id, $0.color) }, uniquingKeysWith: { a, _ in a })
@@ -354,11 +358,15 @@ struct AIActions: Decodable {
     static let actionGuide = """
     You can act on the person's schedule. Only when they ask you to change, plan, reschedule, add or create something, end your reply with one block:
     <actions>{"changes":[{"action":"add|move|remove","title":"...","goal":"exact goal title or null","blockId":"id for move/remove","day":"yyyy-MM-dd","start":"HH:mm","minutes":60}],"tasks":[{"title":"...","goal":"..."}],"notes":[{"title":"...","body":"markdown"}]}</actions>
-    Omit empty keys. Start times on the hour. Never overlap events. Keep the prose before it to one or two sentences; they will review and apply it.
+    "tasks" are to-do items; "changes" are calendar blocks; "notes" are documents. Use only what was asked for. Use null, not "null". Omit empty keys. Start times on the hour. Never overlap events. Keep the prose before it to one or two sentences; they will review and apply it.
     """
     /// Splits a reply into what to show and the actions it carries.
     static func split(_ text: String) -> (String, AIActions?) {
-        guard let a = text.range(of: "<actions>") else { return (text, nil) }
+        guard let a = text.range(of: "<actions>") else {
+            // Small local models often skip the tags and send bare JSON.
+            guard let i = text.firstIndex(of: "{"), let x = extractJSON(AIActions.self, from: String(text[i...])), !x.lines.isEmpty else { return (text, nil) }
+            return (text[..<i].replacingOccurrences(of: "```json", with: "").replacingOccurrences(of: "```", with: "").trimmingCharacters(in: .whitespacesAndNewlines), x)
+        }
         let rest = text[a.upperBound...], b = rest.range(of: "</actions>")
         let json = String(b.map { rest[..<$0.lowerBound] } ?? rest)
         return (String(text[..<a.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines), b == nil ? nil : extractJSON(AIActions.self, from: json))

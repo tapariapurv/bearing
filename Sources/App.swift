@@ -430,6 +430,9 @@ struct MenuBarView: View {
     f.begin(title: "C", mode: .stopwatch); f.tick(120); f.togglePause(); f.tick(40); f.togglePause(); f.noteDistraction(); f.tick(40)
     check(f.worked == 160 && f.pausedFor == 40, "paused time isn't focus time")
     check(f.quality == 75, "quality: 80% focus minus 5 for one distraction")
+    let t0 = Date(timeIntervalSince1970: 0), hr = { t0.addingTimeInterval($0 * 3600) }
+    let ln = DayColumn.lanes([("a", hr(0), hr(2)), ("b", hr(1), hr(3)), ("c", hr(2), hr(4)), ("d", hr(5), hr(6))])
+    check(ln["a"]! == (0, 2) && ln["b"]! == (1, 2) && ln["c"]! == (0, 2) && ln["d"]! == (0, 1), "overlapping events split into lanes")
     f.finish()
     f.begin(mode: .countdown); f.tick(30); f.finish()
     check(Store.shared.data.sessions.count == 2, "sessions under a minute aren't kept")
