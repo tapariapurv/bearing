@@ -961,7 +961,7 @@ struct CoachPage: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 2) {
-                Text(nav.side ? "Coach" : "AI Assistant").font(.system(size: 15, weight: .semibold))
+                Text("Coach").font(.system(size: 15, weight: .semibold))
                 Spacer()
                 IconButton(icon: "target", label: "Turn into goals") { adopt() }.disabled(store.data.chat.isEmpty || busy)
                 IconButton(icon: "square.and.pencil", label: "New chat") { store.data.chat = [] }.disabled(store.data.chat.isEmpty)

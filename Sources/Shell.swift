@@ -71,7 +71,7 @@ struct Shell: View {
 struct ModeSwitch: View {
     @State private var nav = Nav.shared
     @Namespace private var pill
-    private let modes: [(page: Page, title: String, icon: String)] = [(.today, "Day", "doc.text"), (.week, "Week", "rectangle.split.3x1"), (.goals, "Goals", "scope"), (.focus, "Focus", "timer"), (.coach, "AI", "sparkles")]
+    private let modes: [(page: Page, title: String, icon: String)] = [(.today, "Day", "doc.text"), (.week, "Week", "rectangle.split.3x1"), (.goals, "Goals", "scope"), (.focus, "Focus", "timer"), (.coach, "Coach", "sparkles")]
     var body: some View {
         HStack(spacing: 2) {
             ForEach(modes, id: \.page) { m in
