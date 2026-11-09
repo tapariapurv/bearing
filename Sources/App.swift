@@ -433,6 +433,7 @@ struct MenuBarView: View {
     let t0 = Date(timeIntervalSince1970: 0), hr = { t0.addingTimeInterval($0 * 3600) }
     let ln = DayColumn.lanes([("a", hr(0), hr(2)), ("b", hr(1), hr(3)), ("c", hr(2), hr(4)), ("d", hr(5), hr(6))])
     check(ln["a"]! == (0, 2) && ln["b"]! == (1, 2) && ln["c"]! == (0, 2) && ln["d"]! == (0, 1), "overlapping events split into lanes")
+    check(Idea.of(hr(0)) == Idea.of(hr(5)) && Idea.of(hr(0)) != Idea.of(hr(24)), "daily idea is stable per day and rotates")
     f.finish()
     f.begin(mode: .countdown); f.tick(30); f.finish()
     check(Store.shared.data.sessions.count == 2, "sessions under a minute aren't kept")

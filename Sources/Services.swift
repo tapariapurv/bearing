@@ -163,7 +163,7 @@ func applyTodoist(_ r: TDResponse, to d: inout AppData) -> String? {
 
 // MARK: - Calendar (every account already added to macOS)
 
-struct CalEvent: Identifiable, Hashable { var id: String, title: String, start: Date, end: Date, allDay: Bool, color: Color }
+struct CalEvent: Identifiable, Hashable { var id: String, title: String, start: Date, end: Date, allDay: Bool, color: Color, notes: String? = nil }
 
 @Observable @MainActor final class CalendarService {
     static let shared = CalendarService()
@@ -194,14 +194,14 @@ struct CalEvent: Identifiable, Hashable { var id: String, title: String, start: 
         if granted {
             let k = from...max(from, to)
             let local = ekCache[k] ?? ek.events(matching: ek.predicateForEvents(withStart: from, end: to, calendars: nil)).map {
-                CalEvent(id: $0.eventIdentifier ?? UUID().uuidString, title: $0.title ?? "Busy", start: $0.startDate, end: $0.endDate, allDay: $0.isAllDay, color: Color(cgColor: $0.calendar.cgColor))
+                CalEvent(id: $0.eventIdentifier ?? UUID().uuidString, title: $0.title ?? "Busy", start: $0.startDate, end: $0.endDate, allDay: $0.isAllDay, color: Color(cgColor: $0.calendar.cgColor), notes: $0.notes)
             }
             ekCache[k] = local; local.forEach(add)
         }
         let g = GoogleCalendar.shared
         let colors = Dictionary(g.calendars.map { ($0.id, $0.color) }, uniquingKeysWith: { a, _ in a })
         for e in g.events where e.start < to && e.end > from {
-            add(CalEvent(id: e.key, title: e.title, start: e.start, end: e.end, allDay: e.allDay, color: colors[e.cal] ?? .brand))
+            add(CalEvent(id: e.key, title: e.title, start: e.start, end: e.end, allDay: e.allDay, color: colors[e.cal] ?? .brand, notes: e.notes))
         }
         return out
     }
@@ -402,8 +402,12 @@ struct AIActions: Decodable {
         for b in d.blocks.filter({ $0.start >= st && $0.start < en }).sorted(by: { $0.start < $1.start }) {
             o += "- \(b.id.uuidString) | \(b.start.formatted(.iso8601)) | \(Int(b.end.timeIntervalSince(b.start) / 60)) | \(b.title)\n"
         }
+        o += "Today's productivity idea: \(Idea.of(Date()).0). \(Idea.of(Date()).1)\n"
         o += "Other calendar events:\n"
-        for e in CalendarService.shared.events(from: st, to: en).filter({ !$0.allDay }).prefix(40) { o += "- \(e.start.formatted(.iso8601)) to \(e.end.clock): \(e.title)\n" }
+        for e in CalendarService.shared.events(from: st, to: en).filter({ !$0.allDay }).prefix(40) {
+            o += "- \(e.start.formatted(.iso8601)) to \(e.end.clock): \(e.title)\n"
+            if let n = e.notes?.trimmingCharacters(in: .whitespacesAndNewlines), !n.isEmpty { o += "  meeting notes: \(n.replacingOccurrences(of: "\n", with: " ").prefix(400))\n" }
+        }
         if d.prefs.coachReadsJournal {
             let j = d.journal.sorted { $0.id > $1.id }.prefix(5).filter { !$0.text.isEmpty }
             if !j.isEmpty { o += "Recent journal:\n"; for e in j { o += "\(e.id): \(e.text.prefix(500))\n" } }

@@ -285,6 +285,8 @@ struct DayPanel: View {
                     }
                 }
                 Divider()
+                IdeaCard()
+                Divider()
                 Text("Notes").font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary)
                 TextField("Add notes for today…", text: Binding(
                     get: { store.data.journal.first { $0.id == key }?.text ?? "" },

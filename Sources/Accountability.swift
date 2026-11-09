@@ -89,3 +89,39 @@ struct AccountabilityCard: View {
         }
     }
 }
+
+// Daily idea: one well-known productivity principle plus a practical step, rotated by day.
+enum Idea {
+    static let all: [(String, String)] = [
+        ("Eat the frog", "Do your hardest task first, before email or chat."),
+        ("Time blocking", "Give every important task a slot on the calendar, not just a list entry."),
+        ("Two-minute rule", "If it takes under two minutes, do it now instead of tracking it."),
+        ("Parkinson's law", "Work expands to fill the time. Give tasks a tighter block than feels comfortable."),
+        ("Deep work", "Protect one 90-minute block today with blocking on and notifications off."),
+        ("Implementation intentions", "Write it as: when X happens, I will do Y. It doubles follow-through."),
+        ("Weekly review", "Once a week, clear inboxes, check goals and plan next week's blocks."),
+        ("Single-tasking", "One tab, one task. Switching costs minutes of focus each time."),
+        ("Energy management", "Put deep work in your peak hours and admin in your slump."),
+        ("Batching", "Group small similar tasks, like replies or calls, into one block."),
+        ("The one thing", "Ask: what is the one thing that makes everything else easier or unnecessary?"),
+        ("Pareto principle", "20% of the work drives 80% of the result. Start with that 20%."),
+        ("Shutdown ritual", "End the day by writing tomorrow's first task. Then stop."),
+        ("Pomodoro", "25 minutes on, 5 off. After four rounds, take a longer break."),
+        ("Done beats perfect", "Ship a rough first version today, then improve it."),
+        ("Say no", "Every yes costs a block of time. Decline one thing that doesn't serve your goals."),
+        ("Habit stacking", "Attach a new habit to one you already do: after coffee, plan the day."),
+        ("Clear the desk", "A tidy space and closed apps lower the pull of distractions."),
+    ]
+    static func of(_ d: Date) -> (String, String) { all[(Calendar.current.ordinality(of: .day, in: .era, for: d) ?? 0) % all.count] }
+}
+
+struct IdeaCard: View {
+    var body: some View {
+        let i = Idea.of(Date())
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Today's idea").font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary)
+            Text(i.0).font(.callout.weight(.semibold))
+            Text(i.1).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}

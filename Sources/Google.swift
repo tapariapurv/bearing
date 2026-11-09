@@ -7,6 +7,7 @@ import CryptoKit
 
 struct GEvent: Hashable {
     var id: String, cal: String, title: String, start: Date, end: Date, allDay: Bool
+    var notes: String? = nil
     var key: String { "g:\(cal):\(id)" }
 }
 struct GCal: Identifiable, Hashable { var id: String, title: String, color: Color, writable: Bool, primary: Bool, selected: Bool }
@@ -188,7 +189,7 @@ struct GoogleError: LocalizedError { var code: Int, text: String; var errorDescr
         }
         return items.compactMap { e in
             guard let id = e["id"] as? String, e["status"] as? String != "cancelled", let a = when(e["start"]), let b = when(e["end"]) else { return nil }
-            return GEvent(id: id, cal: cal, title: e["summary"] as? String ?? "Busy", start: a.0, end: b.0, allDay: a.1)
+            return GEvent(id: id, cal: cal, title: e["summary"] as? String ?? "Busy", start: a.0, end: b.0, allDay: a.1, notes: e["description"] as? String)
         }
     }
     /// Calendar ids can hold colons; event ids can't.
