@@ -1019,6 +1019,7 @@ struct CoachPage: View {
         let reply = ChatMsg(role: "assistant", text: "")
         store.data.chat.append(reply)
         Task {
+            await MeetingLink.refresh()
             do {
                 try await AI.stream(system: Coach.system + "\n\n" + Coach.actionGuide, messages: history) { tok in
                     if let i = store.data.chat.firstIndex(where: { $0.id == reply.id }) { store.data.chat[i].text += tok }
@@ -1381,6 +1382,17 @@ struct ConnectSettings: View {
                         .buttonStyle(PillButton()).disabled(GoogleClient.id.isEmpty)
                     if GoogleClient.id.isEmpty { Text("This build has no Google client. See the README.").font(.caption).foregroundStyle(.secondary) }
                     if !google.status.isEmpty { Text(google.status).font(.caption).foregroundStyle(.secondary) }
+                }
+            }
+            ForEach(MeetingLink.all) { l in
+                Section("\(l.name) meeting notes") {
+                    if l.connected {
+                        LabeledContent("Status", value: l.status.isEmpty ? "Connected" : l.status)
+                        HStack { Button("Sync Now") { Task { await l.fetch() } }; Button("Disconnect") { l.disconnect() } }
+                    } else {
+                        Button("Sign in with \(l.name)") { Task { await l.connect() } }.buttonStyle(PillButton())
+                        Text(l.status.isEmpty ? "Coach reads your recent meetings through \(l.name)'s official connector." : l.status).font(.caption).foregroundStyle(.secondary)
+                    }
                 }
             }
             Section("Apple Calendar") {

@@ -434,6 +434,8 @@ struct MenuBarView: View {
     let ln = DayColumn.lanes([("a", hr(0), hr(2)), ("b", hr(1), hr(3)), ("c", hr(2), hr(4)), ("d", hr(5), hr(6))])
     check(ln["a"]! == (0, 2) && ln["b"]! == (1, 2) && ln["c"]! == (0, 2) && ln["d"]! == (0, 1), "overlapping events split into lanes")
     check(Idea.of(hr(0)) == Idea.of(hr(5)) && Idea.of(hr(0)) != Idea.of(hr(24)), "daily idea is stable per day and rotates")
+    check(MeetingLink.reply("event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"ok\":1}}\n")["ok"] as? Int == 1
+          && MeetingLink.reply("{\"id\":1,\"result\":{\"ok\":2}}")["ok"] as? Int == 2, "MCP replies parse from JSON and SSE")
     f.finish()
     f.begin(mode: .countdown); f.tick(30); f.finish()
     check(Store.shared.data.sessions.count == 2, "sessions under a minute aren't kept")

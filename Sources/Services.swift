@@ -403,6 +403,7 @@ struct AIActions: Decodable {
             o += "- \(b.id.uuidString) | \(b.start.formatted(.iso8601)) | \(Int(b.end.timeIntervalSince(b.start) / 60)) | \(b.title)\n"
         }
         o += "Today's productivity idea: \(Idea.of(Date()).0). \(Idea.of(Date()).1)\n"
+        for l in MeetingLink.all where !l.recent.isEmpty { o += "Recent meetings from \(l.name):\n\(l.recent)\n" }
         o += "Other calendar events:\n"
         for e in CalendarService.shared.events(from: st, to: en).filter({ !$0.allDay }).prefix(40) {
             o += "- \(e.start.formatted(.iso8601)) to \(e.end.clock): \(e.title)\n"
