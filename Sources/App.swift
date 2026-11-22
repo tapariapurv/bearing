@@ -52,7 +52,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if let i = args.firstIndex(of: "--snapshot"), i + 2 < args.count { Snapshot.run(dir: args[i + 1], dark: args[i + 2] == "dark"); return }
             Blocker.shared.clearStale()
             Todoist.shared.start()
-            if GoogleCalendar.shared.connected { GoogleCalendar.shared.start() }
+            if GoogleCalendar.shared.connected { GoogleCalendar.shared.start(); Task { await Sync.pull() } }
             UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
             if CalendarService.shared.granted { Task { await CalendarService.shared.request() } }
         }
@@ -63,7 +63,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Store.shared.saveNow()
         }
     }
-    func applicationDidBecomeActive(_ n: Notification) { MainActor.assumeIsolated { if !Store.isTesting { Todoist.shared.nudge() } } }
+    func applicationDidBecomeActive(_ n: Notification) { MainActor.assumeIsolated { if !Store.isTesting { Todoist.shared.nudge(); Task { await Sync.pull() } } } }
     func applicationShouldTerminateAfterLastWindowClosed(_ s: NSApplication) -> Bool { false } // the menu bar stays
 }
 
@@ -535,6 +535,9 @@ struct MenuBarView: View {
     check(Account.imbalance([("Book", .core, 2), ("Admin", .support, 9)])?.hasPrefix("Admin") == true && Account.imbalance([("Book", .core, 9), ("Admin", .support, 2)]) == nil, "support beating core is flagged")
     check(Coach.fallbackQuestions([Goal(title: "Run")]).allSatisfy { (2...4).contains($0.options.count) }, "fallback season questions have 2 to 4 options")
     check(Profile(name: "Purv Taparia").initials == "PT" && Profile(email: "a@b.c").initials == "A", "profile initials")
+    let ft = Coach.fresh([.init(title: "Email Sam"), .init(title: "email  sam!"), .init(title: "Book flight")], existing: ["Book Flight"])
+    check(ft.map(\.title) == ["Email Sam"], "found tasks drop duplicates of existing and each other")
+    check(Sync.parse(Data(#"{"fields":{"modified":{"doubleValue":2.5},"data":{"stringValue":"{}"}}}"#.utf8))! == (2.5, "{}") && Sync.parse(Data("{}".utf8)) == nil, "sync reads a Firestore document")
     print(failed == 0 ? "ALL PASSED" : "\(failed) FAILED")
     exit(failed == 0 ? 0 : 1)
 }

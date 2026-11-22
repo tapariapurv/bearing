@@ -125,3 +125,25 @@ struct IdeaCard: View {
         }
     }
 }
+
+/// Adds action items from mail, calendar and meeting notes. Runs itself at most once every 12 hours when Today opens.
+struct FindTasksCard: View {
+    @State private var status = ""
+    @State private var busy = false
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Tasks from mail and meetings").font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary)
+                if !status.isEmpty { Text(status).font(.callout).foregroundStyle(.secondary) }
+            }
+            Spacer()
+            Button(busy ? "Reading…" : "Find") { Task { await run() } }.disabled(busy)
+        }
+        .task { if (Store.shared.data.prefs.lastScan ?? .distantPast) < Date().addingTimeInterval(-43200), !Store.isTesting { await run(quiet: true) } }
+    }
+    private func run(quiet: Bool = false) async {
+        busy = true; defer { busy = false }
+        do { let n = try await Coach.findTasks(); status = n == 0 ? "Nothing new" : "Added \(n) task\(n == 1 ? "" : "s")" }
+        catch { if !quiet { status = error.localizedDescription } }
+    }
+}

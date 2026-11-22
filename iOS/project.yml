@@ -1,0 +1,24 @@
+name: Bearing
+options:
+  deploymentTarget: { iOS: "26.0" }
+targets:
+  Bearing:
+    type: application
+    platform: iOS
+    sources:
+      - Bearing
+      - path: ../Sources/Loopback.swift
+      - path: ../build/GoogleClient.swift
+      - path: ../Icon/AppIcon.icon
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.tapariapurv.bearing
+        SWIFT_VERSION: "5.0"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Bearing
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        MARKETING_VERSION: "1.7.0"
+        CURRENT_PROJECT_VERSION: "1"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        CODE_SIGN_STYLE: Automatic

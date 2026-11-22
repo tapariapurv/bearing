@@ -130,6 +130,7 @@ struct Prefs: Codable {
     var externalURI = ""
     var soundLevels: [String: Double] = [:]
     var playOnFocus = true
+    var lastScan: Date?        // last time Coach.findTasks read mail and notes
     var profile: Profile?      // signed-in Google account; nil shows the welcome screen
 }
 struct Profile: Codable, Hashable {
@@ -198,7 +199,7 @@ extension Color {
     }()
     nonisolated static var isDemo: Bool { isTesting }
     nonisolated static var isTesting: Bool { CommandLine.arguments.contains("--snapshot") || CommandLine.arguments.contains("--selftest") || CommandLine.arguments.contains("--coachtest") }
-    var data = AppData() { didSet { scheduleSave() } }
+    var data = AppData() { didSet { scheduleSave(); Sync.changed() } }
     @ObservationIgnored private var saveTask: Task<Void, Never>?
     private var file: URL { Self.dir.appendingPathComponent("data.json") }
 

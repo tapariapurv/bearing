@@ -12,45 +12,6 @@ struct GEvent: Hashable {
 }
 struct GCal: Identifiable, Hashable { var id: String, title: String, color: Color, writable: Bool, primary: Bool, selected: Bool }
 
-/// Receives the browser's redirect after sign-in, on a random local port.
-final class Loopback: @unchecked Sendable {
-    private let listener: NWListener
-    private let q = DispatchQueue(label: "bearing.oauth")
-    private var done: CheckedContinuation<[String: String]?, Never>?
-    init() throws {
-        let p = NWParameters.tcp
-        p.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any)
-        listener = try NWListener(using: p)
-    }
-    func wait(ready: @escaping @Sendable (UInt16) -> Void) async -> [String: String]? {
-        await withCheckedContinuation { c in
-            q.async { [self] in
-                done = c
-                listener.stateUpdateHandler = { [self] s in
-                    if case .ready = s, let p = listener.port?.rawValue { ready(p) }
-                    if case .failed = s { finish(nil) }
-                }
-                listener.newConnectionHandler = { [self] conn in
-                    conn.start(queue: q)
-                    conn.receive(minimumIncompleteLength: 1, maximumLength: 8192) { [self] data, _, _, _ in
-                        let line = String(decoding: data ?? Data(), as: UTF8.self).components(separatedBy: "\r\n").first ?? ""
-                        let parts = line.split(separator: " ")
-                        let items = parts.count > 1 ? URLComponents(string: "http://x" + parts[1])?.queryItems ?? [] : []
-                        let got = Dictionary(items.map { ($0.name, $0.value ?? "") }, uniquingKeysWith: { a, _ in a })
-                        let html = "<html><body style='font:16px -apple-system;text-align:center;padding-top:80px'>You can close this tab and go back to Bearing.</body></html>"
-                        let reply = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: \(html.utf8.count)\r\nConnection: close\r\n\r\n\(html)"
-                        conn.send(content: Data(reply.utf8), completion: .contentProcessed { _ in conn.cancel() })
-                        if got["code"] != nil || got["error"] != nil { finish(got) }
-                    }
-                }
-                listener.start(queue: q)
-                q.asyncAfter(deadline: .now() + 300) { [self] in finish(nil) }
-            }
-        }
-    }
-    private func finish(_ r: [String: String]?) { listener.cancel(); done?.resume(returning: r); done = nil }
-}
-
 struct GoogleError: LocalizedError { var code: Int, text: String; var errorDescription: String? { text } }
 
 @Observable @MainActor final class GoogleCalendar {
@@ -91,7 +52,7 @@ struct GoogleError: LocalizedError { var code: Int, text: String; var errorDescr
             port.value = p
             var u = URLComponents(string: "https://accounts.google.com/o/oauth2/v2/auth")!
             u.queryItems = [.init(name: "client_id", value: id), .init(name: "redirect_uri", value: "http://127.0.0.1:\(p)/"), .init(name: "response_type", value: "code"),
-                            .init(name: "scope", value: "openid email profile https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.calendarlist.readonly"),
+                            .init(name: "scope", value: "openid email profile https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.calendarlist.readonly https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/datastore"),
                             .init(name: "access_type", value: "offline"), .init(name: "prompt", value: "consent"), .init(name: "state", value: state),
                             .init(name: "code_challenge", value: GoogleCalendar.challenge(verifier)), .init(name: "code_challenge_method", value: "S256")]
             DispatchQueue.main.async { NSWorkspace.shared.open(u.url!) }
@@ -151,7 +112,7 @@ struct GoogleError: LocalizedError { var code: Int, text: String; var errorDescr
     }
 
     private func call(_ method: String, _ path: String, json: [String: Any]? = nil) async throws -> Data {
-        var r = URLRequest(url: URL(string: api + path)!); r.httpMethod = method
+        var r = URLRequest(url: URL(string: path.hasPrefix("https") ? path : api + path)!); r.httpMethod = method
         r.setValue("Bearer \(try await token())", forHTTPHeaderField: "Authorization")
         if let json { r.httpBody = try JSONSerialization.data(withJSONObject: json); r.setValue("application/json", forHTTPHeaderField: "Content-Type") }
         let (d, resp) = try await URLSession.shared.data(for: r)
@@ -162,6 +123,22 @@ struct GoogleError: LocalizedError { var code: Int, text: String; var errorDescr
         }
         return d
     }
+    /// Inbox mail since a date as compact "From | Subject | snippet" lines (gmail.readonly scope).
+    func mail(since: Date) async throws -> String {
+        let g = "https://gmail.googleapis.com/gmail/v1/users/me/messages"
+        let q = enc("in:inbox after:\(Int(since.timeIntervalSince1970)) -category:promotions -category:social -category:updates")
+        let list = (try JSONSerialization.jsonObject(with: try await call("GET", "\(g)?maxResults=25&q=\(q)")) as? [String: Any])?["messages"] as? [[String: Any]] ?? []
+        var o = ""
+        for case let id as String in list.map({ $0["id"] }) {
+            let j = (try JSONSerialization.jsonObject(with: try await call("GET", "\(g)/\(id)?format=metadata&metadataHeaders=From&metadataHeaders=Subject"))) as? [String: Any] ?? [:]
+            let h = (j["payload"] as? [String: Any])?["headers"] as? [[String: Any]] ?? []
+            func v(_ n: String) -> String { h.first { $0["name"] as? String == n }?["value"] as? String ?? "" }
+            o += "- \(v("From")) | \(v("Subject")) | \(j["snippet"] as? String ?? "")\n"
+        }
+        return o
+    }
+    /// Bearer token for other Google APIs (Firestore sync).
+    func bearer() async throws -> String { try await token() }
     private func enc(_ s: String) -> String { s.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? s }
 
     // MARK: Parsing

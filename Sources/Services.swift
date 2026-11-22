@@ -340,7 +340,7 @@ struct PlanChange: Decodable, Identifiable {
 struct GoalReview: Decodable { struct R: Decodable { var goal: String; var status: String; var assessment: String; var fix: String }; var reviews: [R] }
 struct Extracted: Decodable {
     struct G: Decodable { var title: String; var why: String?; var metric: String?; var weeklyHours: Double? }
-    struct T: Decodable { var title: String; var goal: String? }
+    struct T: Decodable { var title: String; var goal: String?; var due: String? }
     var compass: String?; var goals: [G]?; var tasks: [T]?
 }
 
@@ -376,6 +376,43 @@ struct AIActions: Decodable {
         apply(x.changes ?? [])
         for t in x.tasks ?? [] { s.addTask(t.title, goal: s.goals.first { $0.title == t.goal }?.id) }
         for n in x.notes ?? [] { s.data.captures.insert(Capture(title: n.title, source: "AI", text: n.body), at: 0) }
+    }
+    /// Reads mail, calendar notes and meeting notes new since the last scan and adds the person's action items as tasks.
+    /// One compact call with no coach context, to keep tokens low. Returns how many tasks were added.
+    static func findTasks() async throws -> Int {
+        let s = Store.shared, now = Date(), since = s.data.prefs.lastScan ?? now.adding(days: -2)
+        var src = ""
+        if GoogleCalendar.shared.connected {
+            do { let m = try await GoogleCalendar.shared.mail(since: since); if !m.isEmpty { src += "EMAIL:\n\(m)" } }
+            catch let e as GoogleError where e.code == 403 { throw AIError(errorDescription: "Sign in to Google again in Settings so Bearing can read email.") }
+        }
+        await MeetingLink.refresh()
+        for l in MeetingLink.all where !l.recent.isEmpty { src += "MEETINGS (\(l.name)):\n\(l.recent)\n" }
+        for e in CalendarService.shared.events(from: since, to: now.adding(days: 2)) {
+            if let n = e.notes?.trimmingCharacters(in: .whitespacesAndNewlines), !n.isEmpty { src += "EVENT \(e.start.dayKey) \(e.title): \(n.replacingOccurrences(of: "\n", with: " ").prefix(400))\n" }
+        }
+        guard !src.isEmpty else { s.data.prefs.lastScan = now; return 0 }
+        let p = """
+        List action items the person must do themselves. Skip FYIs, newsletters, receipts, things others own, and anything in EXISTING. \
+        Reply with JSON only: {"tasks":[{"title":"verb first, under 10 words","goal":"exact goal title or null","due":"yyyy-MM-dd or null"}]}. At most 8; none is fine.
+        GOALS: \(s.goals.map(\.title).joined(separator: "; "))
+        EXISTING: \(s.data.tasks.suffix(80).map(\.title).joined(separator: "; "))
+        \(src.prefix(12000))
+        """
+        let r = try await AI.complete(system: "You extract to-dos. Today is \(now.dayKey).", prompt: p)
+        guard let x = extractJSON(Extracted.self, from: r) else { throw AIError(errorDescription: "The model didn't return usable tasks. Try again.") }
+        s.data.prefs.lastScan = now
+        let new = fresh(x.tasks ?? [], existing: s.data.tasks.map(\.title))
+        for t in new {
+            s.addTask(t.title, goal: s.goals.first { $0.title == t.goal }?.id)
+            if let d = t.due.flatMap({ parseTodoistDate($0 + "T09:00:00") }), let i = s.data.tasks.lastIndex(where: { $0.title == t.title }) { s.data.tasks[i].due = d }
+        }
+        return new.count
+    }
+    /// Drops tasks whose title (ignoring case and spaces) already exists or repeats.
+    nonisolated static func fresh(_ ts: [Extracted.T], existing: [String]) -> [Extracted.T] {
+        var seen = Set(existing.map { $0.lowercased().filter(\.isLetter) })
+        return ts.filter { !$0.title.isEmpty && seen.insert($0.title.lowercased().filter(\.isLetter)).inserted }
     }
     static let persona = """
     You are the Bearing coach: a direct but kind productivity coach. Name problems plainly, propose one specific change, and ask for approval. \
