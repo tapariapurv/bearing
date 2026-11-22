@@ -155,6 +155,8 @@ struct AppData: Codable {
     var projects: [String: String] = [:]
     var prefs = Prefs()
     var seasonQA: [QA]?        // answers from season setup
+    var about: [QA]?           // answers to the coach's get-to-know-you questions (recent)
+    var aboutSummary: String?  // older answers, compacted by the model
     var reflections: [Reflection]?
     var plannedDay: String?    // day key of the last daily sync
 }
@@ -170,8 +172,13 @@ func hm(_ seconds: Double) -> String {
     let m = Int(seconds / 60); return m < 60 ? "\(m)m" : "\(m / 60)h \(m % 60)m"
 }
 func dyn(_ l: UInt32, _ d: UInt32) -> Color {
+    #if os(iOS)
+    func c(_ v: UInt32) -> UIColor { UIColor(red: CGFloat(v >> 16 & 255) / 255, green: CGFloat(v >> 8 & 255) / 255, blue: CGFloat(v & 255) / 255, alpha: 1) }
+    return Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? c(d) : c(l) })
+    #else
     func c(_ v: UInt32) -> NSColor { NSColor(srgbRed: CGFloat(v >> 16 & 255) / 255, green: CGFloat(v >> 8 & 255) / 255, blue: CGFloat(v & 255) / 255, alpha: 1) }
     return Color(nsColor: NSColor(name: nil) { $0.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? c(d) : c(l) })
+    #endif
 }
 let goalPalette = [dyn(0x38BDF8, 0x7DD3FC), dyn(0xEF4444, 0xF87171), dyn(0x14B8A6, 0x2DD4BF), dyn(0xE5409F, 0xF472B6),
                    dyn(0x3FAE86, 0x4ADE9F), dyn(0x6366F1, 0x818CF8), dyn(0xF59E0B, 0xFBBF24), dyn(0x8B5CF6, 0xA78BFA)]

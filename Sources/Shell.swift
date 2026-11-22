@@ -45,7 +45,10 @@ struct Shell: View {
     var body: some View {
         VStack(spacing: 8) {
             ZStack {
-                Color.clear.contentShape(.rect).gesture(WindowDragGesture())
+                Color.clear.contentShape(.rect)
+                #if os(macOS)
+                    .gesture(WindowDragGesture())
+                #endif
                 HStack(spacing: 6) {
                     IconButton(icon: "sidebar.left", label: nav.showTasks ? "Hide tasks" : "Show tasks", on: !nav.showTasks) { nav.showTasks.toggle() }
                     Spacer()
@@ -55,8 +58,7 @@ struct Shell: View {
             }.frame(height: 32).padding(.top, 6)
             HStack(spacing: 8) {
                 if nav.showTasks { TasksPanel().frame(width: 272).panel() }
-                PageView(page: nav.page).id(nav.page).transition(.opacity).frame(maxWidth: .infinity, maxHeight: .infinity).panel()
-                    .animation(.easeOut(duration: 0.14), value: nav.page)
+                PageView(page: nav.page).id(nav.page).frame(maxWidth: .infinity, maxHeight: .infinity).panel()
                 if nav.side { CoachPage().frame(width: 360).panel() }
                 else if nav.page == .today { DayPanel().frame(width: 290).panel() }
             }
@@ -77,7 +79,7 @@ struct ModeSwitch: View {
             ForEach(modes, id: \.page) { m in
                 let on = nav.page == m.page
                 Button { nav.page = m.page; if m.page == .coach { nav.side = false } } label: {
-                    HStack(spacing: 5) { Image(systemName: m.icon); if on { Text(m.title) } }
+                    HStack(spacing: 5) { Image(systemName: m.icon); if on { Text(m.title).fixedSize().transition(.opacity) } }
                         .font(.system(size: 12, weight: on ? .semibold : .medium)).foregroundStyle(on ? Color.primary : .secondary)
                         .padding(.horizontal, on ? 11 : 9).frame(height: 26)
                         .background { if on { Capsule().fill(Color.surface).shadow(color: .black.opacity(0.08), radius: 2, y: 1).matchedGeometryEffect(id: "pill", in: pill) } }
@@ -93,21 +95,15 @@ struct ModeSwitch: View {
 struct TopActions: View {
     @State private var nav = Nav.shared
     @State private var store = Store.shared
-    @Environment(\.openURL) private var openURL
     var body: some View {
         HStack(spacing: 4) {
             IconButton(icon: "arrow.clockwise", label: "Sync calendars and tasks") {
                 Todoist.shared.nudge(); Task { await GoogleCalendar.shared.sync() }
             }
-            Button { openURL(URL(string: "https://github.com/tapariapurv/bearing/issues")!) } label: {
-                Text("Help us improve").font(.system(size: 12, weight: .medium)).padding(.horizontal, 11).frame(height: 26)
-                    .overlay(Capsule().strokeBorder(Color.primary.opacity(0.15))).contentShape(.capsule)
-            }.buttonStyle(.plain).padding(.horizontal, 4)
             IconButton(icon: "chart.bar", label: "Insights", on: nav.page == .insights) { nav.page = .insights }
             IconButton(icon: "book", label: "Journal", on: nav.page == .journal) { nav.page = .journal }
             IconButton(icon: "waveform", label: "Capture", on: nav.page == .capture) { nav.page = .capture }
             IconButton(icon: "bubble.left", label: "Coach", on: nav.side) { nav.side.toggle() }
-            IconButton(icon: "sparkles", label: "Plan today with your coach") { nav.dailySync = true }
             ScoreRing(value: store.dayScore).padding(.horizontal, 4)
             Avatar()
         }
@@ -310,10 +306,14 @@ struct WelcomeView: View {
     var body: some View {
         VStack(spacing: 0) {
             Spacer()
+            #if os(iOS)
+            Image(systemName: "location.north.circle.fill").font(.system(size: 64)).foregroundStyle(.tint)
+            #else
             Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 76, height: 76).accessibilityHidden(true)
+            #endif
             Text("Welcome to Bearing").font(.system(size: 30, weight: .bold)).padding(.top, 16)
             Text("Plan your week around what matters, focus without distractions, and get an honest coach for where your time goes.")
-                .font(.title3).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 460).padding(.top, 8)
+                .font(.title3).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 460).fixedSize(horizontal: false, vertical: true).padding(.top, 8)
             VStack(spacing: 10) {
                 feature("scope", 1, "Seasons, not resolutions", "Pick a few goals for the next 6 to 12 weeks and rank them.")
                 feature("calendar", 0, "Plan, Focus, Reflect", "A daily sync with your coach, focus sessions, and a nightly check-in.")
@@ -338,7 +338,7 @@ struct WelcomeView: View {
                 Button("Continue without an account") { store.data.prefs.profile = Profile(name: NSFullUserName()); if store.goals.isEmpty { Nav.shared.seasonSetup = true } }
                     .buttonStyle(.plain).font(.callout).foregroundStyle(.secondary).padding(.top, 10)
             }
-            Text("Signing in connects your Google Calendar. Everything else stays on this Mac.").font(.caption).foregroundStyle(.tertiary).padding(.top, 14)
+            Text("Signing in connects your Google Calendar. Everything else stays on your devices.").font(.caption).foregroundStyle(.tertiary).padding(.top, 14)
             Spacer()
         }
         .padding(24).frame(maxWidth: .infinity, maxHeight: .infinity).background(Color.page)

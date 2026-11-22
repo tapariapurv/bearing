@@ -421,8 +421,13 @@ struct WeekPage: View {
                     round("chevron.right", dayMode ? "Next day" : "Next week") { start = start.adding(days: dayMode ? 1 : 7) }
                     Button(dayMode ? "Today" : "This week") { start = Date().startOfDay }.buttonStyle(QuietButton()).disabled(isCurrent)
                     Spacer()
+                    #if os(macOS)
                     IconButton(icon: store.data.prefs.blockDuringFocus ? "shield.fill" : "shield", label: "Block distractions while focusing", on: store.data.prefs.blockDuringFocus) { store.data.prefs.blockDuringFocus.toggle() }
-                    Button(planning ? "Planning…" : "Plan with Coach") {
+                    let planLabel = "Plan with Coach"
+                    #else
+                    let planLabel = "Plan"
+                    #endif
+                    Button(planning ? "Planning…" : planLabel) {
                         planning = true; error = nil
                         Task { do { draft = DraftBox(draft: try await Coach.draftWeek()) } catch { self.error = error.localizedDescription }; planning = false }
                     }.buttonStyle(PillButton()).disabled(planning)
@@ -727,7 +732,9 @@ struct BlockView: View {
         .popover(isPresented: $detail, arrowEdge: .trailing) { BlockDetail(block: block, editing: $editing, shown: $detail) }
         .overlay(alignment: .bottom) {
             Color.clear.frame(height: 8).contentShape(.rect)
+                #if os(macOS)
                 .onHover { $0 ? NSCursor.resizeUpDown.push() : NSCursor.pop() }
+                #endif
                 .gesture(DragGesture(coordinateSpace: .global)
                     .onChanged { v in withAnimation(.snappy(duration: 0.12)) { grow = max(Self.step - height, snap(v.translation.height)) } }
                     .onEnded { _ in
@@ -895,10 +902,12 @@ struct MusicCard: View {
             case .folder:
                 HStack {
                     Text(s.data.prefs.musicFolder ?? "No folder chosen").lineLimit(1).truncationMode(.middle).foregroundStyle(.secondary)
+#if os(macOS)
                     Button("Choose…") {
                         let p = NSOpenPanel(); p.canChooseDirectories = true; p.canChooseFiles = false
                         if p.runModal() == .OK { s.data.prefs.musicFolder = p.url?.path; music.reload() }
                     }
+#endif
                 }
             case .spotify: TextField("Optional Spotify link, like spotify:playlist:…", text: $s.data.prefs.externalURI).field()
             case .appleMusic: TextField("Optional playlist name", text: $s.data.prefs.externalURI).field()
@@ -1309,12 +1318,20 @@ struct InsightsPage: View {
 
 struct SettingsView: View {
     var body: some View {
+        #if os(iOS)
+        List {
+            NavigationLink { ConnectSettings().navigationTitle("Accounts") } label: { Label("Accounts", systemImage: "person.crop.circle") }
+            NavigationLink { AISettings().navigationTitle("AI") } label: { Label("AI", systemImage: "sparkles") }
+            NavigationLink { CreditsView().navigationTitle("Music Credits") } label: { Label("Music Credits", systemImage: "music.note") }
+        }.navigationTitle("Settings")
+        #else
         TabView {
+            ConnectSettings().tabItem { Label("Accounts", systemImage: "person.crop.circle") }
             AISettings().tabItem { Label("AI", systemImage: "sparkles") }
-            ConnectSettings().tabItem { Label("Connections", systemImage: "link") }
             BlockSettings().tabItem { Label("Blocking", systemImage: "hand.raised") }
             CreditsView().tabItem { Label("Music Credits", systemImage: "music.note") }
         }.frame(width: 560, height: 460)
+        #endif
     }
 }
 struct AISettings: View {
@@ -1363,6 +1380,13 @@ struct ConnectSettings: View {
     var body: some View {
         @Bindable var s = store
         Form {
+            if let p = s.data.prefs.profile {
+                Section("Bearing account") {
+                    LabeledContent("Signed in as", value: p.email.isEmpty ? p.name : p.email)
+                    Text(google.connected ? "Goals, plans and tasks sync to your other devices through your Google account." : "Sign in with Google below to sync with your iPhone.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
             Section("Todoist") {
                 if s.data.todoistToken {
                     LabeledContent("Status", value: todoist.status)
@@ -1431,10 +1455,12 @@ struct BlockSettings: View {
                 }
             }
             Section("Apps") {
+#if os(macOS)
                 Button("Add App…") {
                     let p = NSOpenPanel(); p.allowedContentTypes = [.application]; p.directoryURL = URL(fileURLWithPath: "/Applications")
                     if p.runModal() == .OK, let id = p.url.flatMap({ Bundle(url: $0)?.bundleIdentifier }), !s.data.prefs.blockApps.contains(id) { s.data.prefs.blockApps.append(id) }
                 }
+#endif
                 ForEach(s.data.prefs.blockApps, id: \.self) { a in
                     HStack { Text(a); Spacer(); Button("Remove") { s.data.prefs.blockApps.removeAll { $0 == a } } }
                 }

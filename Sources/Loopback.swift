@@ -39,3 +39,27 @@ final class Loopback: @unchecked Sendable {
     }
     private func finish(_ r: [String: String]?) { listener.cancel(); done?.resume(returning: r); done = nil }
 }
+
+#if os(macOS)
+import AppKit
+extension Loopback { @MainActor static func open(_ u: URL) { NSWorkspace.shared.open(u) }; @MainActor static func close() {} }
+#else
+import AuthenticationServices
+import UIKit
+/// iOS opens sign-in pages in an in-app browser sheet; the loopback still receives the code.
+extension Loopback {
+    @MainActor private static var sheet: ASWebAuthenticationSession?
+    @MainActor static func open(_ u: URL) {
+        sheet = ASWebAuthenticationSession(url: u, callback: .customScheme("bearing")) { _, _ in }
+        sheet?.presentationContextProvider = Anchor.shared
+        sheet?.start()
+    }
+    @MainActor static func close() { sheet?.cancel(); sheet = nil }
+}
+final class Anchor: NSObject, ASWebAuthenticationPresentationContextProviding {
+    static let shared = Anchor()
+    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+        MainActor.assumeIsolated { UIApplication.shared.connectedScenes.compactMap { ($0 as? UIWindowScene)?.keyWindow }.first ?? ASPresentationAnchor() }
+    }
+}
+#endif

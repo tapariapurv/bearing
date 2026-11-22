@@ -39,6 +39,8 @@ cat > "$A/Contents/Info.plist" <<EOF
 <key>NSAppleEventsUsageDescription</key><string>Bearing plays and pauses Spotify or Apple Music during focus sessions.</string>
 </dict></plist>
 EOF
+# A stable identity keeps Keychain and firewall approvals across rebuilds; ad-hoc signing makes macOS ask again every build.
+ID=${ID:-$(security find-identity -v -p codesigning | grep -m1 "Apple Development" | sed 's/.*"\(.*\)"/\1/')}
 codesign -fs "${ID:--}" "$A"
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$A"
 

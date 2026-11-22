@@ -55,8 +55,9 @@ struct GoogleError: LocalizedError { var code: Int, text: String; var errorDescr
                             .init(name: "scope", value: "openid email profile https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.calendarlist.readonly https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/datastore"),
                             .init(name: "access_type", value: "offline"), .init(name: "prompt", value: "consent"), .init(name: "state", value: state),
                             .init(name: "code_challenge", value: GoogleCalendar.challenge(verifier)), .init(name: "code_challenge_method", value: "S256")]
-            DispatchQueue.main.async { NSWorkspace.shared.open(u.url!) }
+            Task { @MainActor in Loopback.open(u.url!) }
         }
+        Loopback.close()
         guard let got else { status = "Sign-in timed out. Try again."; return }
         guard got["state"] == state, let code = got["code"] else { status = "Google sign-in didn't finish: \(got["error"] ?? "state mismatch")."; return }
         do {

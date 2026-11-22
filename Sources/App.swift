@@ -1,7 +1,9 @@
 import SwiftUI
 import AVFoundation
 import UserNotifications
+#if os(macOS)
 import AppKit
+#endif
 
 enum Page: String, CaseIterable, Identifiable {
     case today = "Today", goals = "Goals", week = "Week", tasks = "Tasks", focus = "Focus", coach = "Coach", journal = "Journal", capture = "Capture", insights = "Insights"
@@ -24,6 +26,7 @@ enum Page: String, CaseIterable, Identifiable {
     var side = false           // coach in the right panel
 }
 
+#if os(macOS)
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ n: Notification) {
         MainActor.assumeIsolated {
@@ -96,6 +99,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         .menuBarExtraStyle(.window)
     }
 }
+#endif
 
 struct PageView: View {
     let page: Page
@@ -128,6 +132,7 @@ extension Store {
     }
 }
 
+#if os(macOS)
 struct MenuBarView: View {
     enum Tab: String, CaseIterable { case today = "Today", tasks = "Tasks", goals = "Goals" }
     @State private var focus = Focus.shared
@@ -155,48 +160,28 @@ struct MenuBarView: View {
 
     var body: some View {
         @Bindable var s = store
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 8) {
             hero(s)
-            HStack(spacing: 6) {
-                TextField(kind.prompt, text: $quick).field().onSubmit { store.quickAdd(quick, as: kind); quick = "" }
-                ForEach(QuickKind.allCases, id: \.self) { k in
-                    icon(k.icon, "Add as \(k.rawValue.lowercased())", on: k == kind) { kind = k }
-                }
-            }
-            Segments(selection: $tab, options: [Opt("Today", .today), Opt("Tasks", .tasks), Opt("Goals", .goals)])
-            ScrollView {
-                VStack(alignment: .leading, spacing: 8) {
-                    switch tab { case .today: agenda; case .tasks: tasks; case .goals: goals }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .frame(height: 168)
+            TextField("Add a task", text: $quick).field().onSubmit { store.quickAdd(quick, as: .task); quick = "" }
             Divider()
-            HStack(spacing: 6) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 6) { agenda; ForEach(openTasks.filter { ($0.due ?? .distantFuture) >= Date().startOfDay.adding(days: 1) }.prefix(8)) { taskRow($0) } }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxHeight: 200).fixedSize(horizontal: false, vertical: true)
+            Divider()
+            HStack(spacing: 2) {
                 icon(music.playing ? "pause.fill" : "play.fill", music.playing ? "Pause music" : "Play music") { music.toggle() }
                 icon("forward.fill", "Next track") { music.next() }
-                Text(music.nowPlaying.isEmpty ? store.data.prefs.musicSource.rawValue : music.nowPlaying).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                icon("hand.raised", "Block distractions during focus", on: store.data.prefs.blockDuringFocus) { s.data.prefs.blockDuringFocus.toggle() }
                 Spacer(minLength: 4)
-                icon("hand.raised.fill", "Block distractions during focus", on: store.data.prefs.blockDuringFocus) { s.data.prefs.blockDuringFocus.toggle() }
-            }
-            Divider()
-            HStack(spacing: 0) {
-                ForEach(Page.allCases) { p in
-                    Button { open(p) } label: {
-                        Image(systemName: p.icon).font(.system(size: 10, weight: .semibold)).foregroundStyle(.white)
-                            .frame(width: 22, height: 22).background(p.tint, in: .rect(cornerRadius: 6))
-                    }
-                    .buttonStyle(.plain).help(p.rawValue).accessibilityLabel("Open \(p.rawValue)")
-                    Spacer(minLength: 0)
-                }
-                SettingsLink { Image(systemName: "gearshape").font(.system(size: 12)).frame(width: 22, height: 22).contentShape(.rect) }
+                Button("Open Bearing") { open(Nav.shared.page) }.buttonStyle(.plain).font(.callout).foregroundStyle(.secondary)
+                SettingsLink { Image(systemName: "gearshape").font(.system(size: 11)).foregroundStyle(.secondary).frame(width: 24, height: 24).contentShape(.rect) }
                     .buttonStyle(.plain).help("Settings").accessibilityLabel("Settings")
-                Spacer(minLength: 0)
-                Button { NSApp.terminate(nil) } label: { Image(systemName: "power").font(.system(size: 12)).frame(width: 22, height: 22).contentShape(.rect) }
-                    .buttonStyle(.plain).help("Quit Bearing").accessibilityLabel("Quit Bearing")
+                icon("power", "Quit Bearing") { NSApp.terminate(nil) }
             }
         }
-        .padding(14).frame(width: 340)
+        .padding(12).frame(width: 300)
     }
 
     @ViewBuilder private func hero(_ s: Store) -> some View {
@@ -219,7 +204,6 @@ struct MenuBarView: View {
                     if let b = nextBlock, Calendar.current.isDateInToday(b.start) { focus.begin(title: b.title, goal: b.goalID, task: b.taskID) } else { focus.begin() }
                 }.buttonStyle(PillButton())
             }
-            Segments(selection: $s.data.prefs.timerMode, options: TimerMode.allCases.map { Opt($0.rawValue, $0) })
         }
     }
     private var focusedToday: Double { store.data.sessions.filter { $0.start >= Date().startOfDay }.reduce(0) { $0 + $1.seconds } }
@@ -295,6 +279,7 @@ struct MenuBarView: View {
         .buttonStyle(.plain).help(label).accessibilityLabel(label).accessibilityAddTraits(on ? .isSelected : [])
     }
 }
+#endif
 
 // MARK: - Screenshots and self-test
 
@@ -332,6 +317,9 @@ struct MenuBarView: View {
         s.data.captures = [Capture(title: "Morning walk brain dump", text: "I keep coming back to the idea that the book needs a stronger opening…")]
         s.data.prefs.soundLevels = ["Rain": 0.5, "Brown noise": 0.3]
     }
+}
+#if os(macOS)
+extension Snapshot {
     static func run(dir: String, dark: Bool) {
         demo()
         NSApp.setActivationPolicy(.regular)
@@ -376,6 +364,7 @@ struct MenuBarView: View {
         }
     }
 }
+#endif
 
 @MainActor func selfTest() {
     func check(_ ok: Bool, _ name: String) { print(ok ? "ok   " : "FAIL ", name); if !ok { failed += 1 } }
@@ -534,6 +523,8 @@ struct MenuBarView: View {
     check(Account.call(spent: 2, planned: 20, pace: 20, weekly: 2, lowDays: 0).verdict.hasPrefix("You plan it, then skip"), "skipped plans are called out")
     check(Account.imbalance([("Book", .core, 2), ("Admin", .support, 9)])?.hasPrefix("Admin") == true && Account.imbalance([("Book", .core, 9), ("Admin", .support, 2)]) == nil, "support beating core is flagged")
     check(Coach.fallbackQuestions([Goal(title: "Run")]).allSatisfy { (2...4).contains($0.options.count) }, "fallback season questions have 2 to 4 options")
+    check(Coach.presets.allSatisfy { $0.options.count == 4 }, "coach preset questions have 4 options")
+    let n0 = Store.shared.data.about?.count ?? 0; Coach.remember("Q", "A"); check(Store.shared.data.about?.count == n0 + 1, "coach remembers answers"); Store.shared.data.about?.removeLast()
     check(Profile(name: "Purv Taparia").initials == "PT" && Profile(email: "a@b.c").initials == "A", "profile initials")
     let ft = Coach.fresh([.init(title: "Email Sam"), .init(title: "email  sam!"), .init(title: "Book flight")], existing: ["Book Flight"])
     check(ft.map(\.title) == ["Email Sam"], "found tasks drop duplicates of existing and each other")
@@ -565,6 +556,7 @@ final class GStub: URLProtocol, @unchecked Sendable {
 // MARK: - Floating timer
 
 /// Stays above other apps during a session without taking focus from them.
+#if os(macOS)
 @MainActor enum FloatingTimer {
     private static var panel: NSPanel?
     static func show() {
@@ -632,3 +624,4 @@ private struct FloatingTimerView: View {
             .buttonStyle(.plain).foregroundStyle(.secondary).help(name).accessibilityLabel(name)
     }
 }
+#endif

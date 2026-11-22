@@ -7,7 +7,7 @@ targets:
     platform: iOS
     sources:
       - Bearing
-      - path: ../Sources/Loopback.swift
+      - path: ../Sources
       - path: ../build/GoogleClient.swift
       - path: ../Icon/AppIcon.icon
     settings:
@@ -22,3 +22,7 @@ targets:
         CURRENT_PROJECT_VERSION: "1"
         TARGETED_DEVICE_FAMILY: "1,2"
         CODE_SIGN_STYLE: Automatic
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: Bearing records voice notes and brain dumps.
+        INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: Bearing turns your voice notes into text.
+        INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription: Bearing shows your events and saves time blocks.
+        INFOPLIST_KEY_NSRemindersFullAccessUsageDescription: Bearing can bring in your reminders as tasks.

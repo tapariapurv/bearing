@@ -71,6 +71,37 @@ struct MCQuestion: Codable, Hashable { var question: String; var options: [Strin
 private struct MCQuestions: Decodable { var questions: [MCQuestion] }
 
 extension Coach {
+    static let presets = [
+        MCQuestion(question: "When do you do your best thinking?", options: ["Early morning", "Late morning", "Afternoon", "Late at night"]),
+        MCQuestion(question: "What makes a day feel like a win?", options: ["Finishing one big thing", "Clearing lots of small tasks", "Time with people I love", "Learning something new"]),
+        MCQuestion(question: "What drains you most in a work day?", options: ["Meetings", "Context switching", "Messages and email", "Unclear priorities"]),
+        MCQuestion(question: "How do you want me to push you?", options: ["Gently, with encouragement", "Directly, call it out", "With data and numbers", "Only when I ask"]),
+    ]
+    /// One question that would most improve coaching, written from everything in `context`; presets cover no model.
+    static func knowYou() async -> MCQuestion {
+        let asked = (Store.shared.data.about ?? []).map(\.q)
+        let p = """
+        From all my data above, ask me the ONE multiple-choice question whose answer would most improve how you coach me. \
+        Look for gaps: patterns you can't explain, goals that keep slipping, how I work best. Don't repeat these: \(asked.suffix(20).joined(separator: " | ")). \
+        Reply with JSON only: {"questions":[{"question":"...","options":["...","...","...","..."]}]}. 4 options, each under 9 words.
+        """
+        if let r = try? await AI.complete(system: system, prompt: p), let q = extractJSON(MCQuestions.self, from: r)?.questions.first,
+           !q.question.isEmpty, q.options.count >= 2 { return MCQuestion(question: q.question, options: Array(q.options.prefix(4))) }
+        return presets.first { !asked.contains($0.question) } ?? presets[asked.count % presets.count]
+    }
+    /// Stores an answer. Past 20 answers, the oldest 12 fold into a short summary so the context stays small.
+    static func remember(_ q: String, _ a: String) {
+        let s = Store.shared
+        s.data.about = (s.data.about ?? []) + [QA(q: q, a: a)]
+        guard let all = s.data.about, all.count > 20 else { return }
+        let old = all.prefix(12), prev = s.data.aboutSummary ?? ""
+        Task {
+            let p = "Merge these facts about me into one summary under 150 words. Keep only what helps coach me; drop repeats.\nCurrent summary: \(prev)\nNew answers:\n" + old.map { "- \($0.q) \($0.a)" }.joined(separator: "\n")
+            guard let r = try? await AI.complete(system: persona, prompt: p), !r.isEmpty else { return }
+            s.data.aboutSummary = r.trimmingCharacters(in: .whitespacesAndNewlines)
+            s.data.about = Array((s.data.about ?? []).dropFirst(old.count))
+        }
+    }
     /// Sharp follow-ups for a new season. Falls back to fixed questions so setup never stalls without a model.
     static func seasonQuestions() async -> [MCQuestion] {
         let p = """

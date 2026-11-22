@@ -162,14 +162,16 @@ struct ReflectView: View {
     @FocusState private var energyFocus: Bool
     private var goals: [Goal] { store.goals.filter { $0.tier != .support } }
     private var blocks: [Block] { store.blocks(on: Self.day) }
-    private var total: Int { goals.count + (blocks.isEmpty ? 0 : 1) }
+    private var total: Int { goals.count + (blocks.isEmpty ? 0 : 1) + 1 }
+    @State private var ask: MCQuestion?
+    @State private var answer = ""
     private var dayName: String { Calendar.current.isDateInToday(Self.day) ? "today" : "yesterday" }
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             StepBar(count: max(1, total), index: step)
             Group {
                 if goals.isEmpty { Text("Add a goal first, then reflect on it here.").foregroundStyle(.secondary) }
-                else if step < goals.count { goalStep(step) } else { energyStep }
+                else if step < goals.count { goalStep(step) } else if step == goals.count && !blocks.isEmpty { energyStep } else { askStep }
             }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             HStack {
                 Button(step == 0 ? "Cancel" : "Back") { if step == 0 { dismiss() } else { step -= 1 } }.keyboardShortcut(.cancelAction)
@@ -197,6 +199,17 @@ struct ReflectView: View {
                 TextField("Add a note (optional)", text: $ratings[i].note, axis: .vertical).field().lineLimit(1...3)
             }
         }
+    }
+    @ViewBuilder private var askStep: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("One question from your coach").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            if let q = ask {
+                Text(q.question).font(.title2.weight(.bold)).fixedSize(horizontal: false, vertical: true)
+                VStack(spacing: 6) { ForEach(q.options, id: \.self) { o in ChoiceRow(title: o, selected: answer == o) { answer = o } } }
+                TextField("Or answer in your own words", text: $answer, axis: .vertical).field().lineLimit(1...3)
+            } else { ProgressView().frame(maxWidth: .infinity, minHeight: 120) }
+        }
+        .task { if ask == nil { ask = await Coach.knowYou() } }
     }
     private var energyStep: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -257,6 +270,7 @@ struct ReflectView: View {
     private func set(_ b: Block, _ e: Energy) { var b = b; b.energy = b.energy == e ? nil : e; store.updateBlock(b) }
     static func missed(_ blocks: [Block]) -> [String] { blocks.filter { $0.done == false }.map(\.title) }
     private func save() {
+        if let q = ask, !answer.trimmingCharacters(in: .whitespaces).isEmpty { Coach.remember(q.question, answer) }
         var all = store.data.reflections ?? []
         all.removeAll { $0.id == Self.day.dayKey }
         let missed = Self.missed(blocks)

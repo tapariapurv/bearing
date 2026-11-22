@@ -1,5 +1,7 @@
 import SwiftUI
+#if os(macOS)
 import ApplicationServices
+#endif
 
 // MARK: - Focus quality: on-device activity tracking. Nothing leaves the Mac; only app names and seconds are stored.
 
@@ -23,6 +25,7 @@ struct FocusBreakdown: Equatable { var onTask = 0.0, distraction = 0.0, idle = 0
 
     /// One second of the session: idle, or whatever app is in front.
     static func sample(_ dt: Double, into a: inout [String: AppTime]) {
+        #if os(macOS)
         let quiet = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)
         var t: AppTime
         if quiet > idleAfter { t = a["idle"] ?? AppTime(id: "idle", name: "Away") }
@@ -33,8 +36,10 @@ struct FocusBreakdown: Equatable { var onTask = 0.0, distraction = 0.0, idle = 0
             t = a[key] ?? AppTime(id: key, name: (app.localizedName ?? b) + (site.map { " · \($0)" } ?? ""), site: site)
         }
         t.seconds += dt; a[t.id] = t
+        #endif
     }
     /// The front window's title, only when the person has allowed Accessibility. Read, matched, discarded.
+    #if os(macOS)
     private static func windowTitle(_ app: NSRunningApplication) -> String? {
         guard AXIsProcessTrusted() else { return nil }
         let el = AXUIElementCreateApplication(app.processIdentifier)
@@ -43,6 +48,7 @@ struct FocusBreakdown: Equatable { var onTask = 0.0, distraction = 0.0, idle = 0
               AXUIElementCopyAttributeValue(w as! AXUIElement, kAXTitleAttribute as CFString, &t) == .success else { return nil }
         return t as? String
     }
+    #endif
     nonisolated static func site(in title: String) -> String? { let l = title.lowercased(); return sites.first { l.contains($0) } }
 
     static func isDistraction(_ t: AppTime, intention: String, distracting: Set<String>) -> Bool {
@@ -101,10 +107,12 @@ struct FocusSummary: View {
                     }
                 }.font(.callout)
             }
+            #if os(macOS)
             if !AXIsProcessTrusted() {
                 Text("Allow Bearing under Privacy & Security > Accessibility to tell YouTube or Reddit apart from work in your browser. Titles are checked on this Mac and never stored.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
+            #endif
         }
     }
     private func legend(_ t: String, _ s: Double, _ c: Color) -> some View {

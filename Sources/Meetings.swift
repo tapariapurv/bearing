@@ -55,9 +55,10 @@ import SwiftUI
                 u.queryItems = [.init(name: "client_id", value: cid), .init(name: "redirect_uri", value: redirect), .init(name: "response_type", value: "code"),
                                 .init(name: "scope", value: scope), .init(name: "state", value: state), .init(name: "resource", value: self.server),
                                 .init(name: "code_challenge", value: GoogleCalendar.challenge(verifier)), .init(name: "code_challenge_method", value: "S256")]
-                NSWorkspace.shared.open(u.url!)
+                Loopback.open(u.url!)
             }
         }
+        Loopback.close()
         guard let got, got["state"] == state, let code = got["code"] else { status = "\(name) sign-in didn't finish."; return }
         do {
             try await token(["grant_type": "authorization_code", "code": code, "client_id": box.client, "code_verifier": verifier,

@@ -1,4 +1,7 @@
 import SwiftUI
+#if os(iOS)
+import AudioToolbox
+#endif
 import AVFoundation
 import Speech
 import UserNotifications
@@ -105,7 +108,11 @@ import Observation
         }
         title = ""; goalID = nil; taskID = nil
     }
+#if os(macOS)
     private func chime() { if !Store.isTesting { NSSound(named: "Glass")?.play() } }
+#else
+    private func chime() { if !Store.isTesting { AudioServicesPlaySystemSound(1013) } }
+#endif
     private func notify(_ t: String, _ b: String) {
         guard !Store.isTesting else { return }
         let c = UNMutableNotificationContent(); c.title = t; c.body = b
@@ -172,6 +179,7 @@ import Observation
     func uninstallHelper() {
         admin("'\(Self.helper)' clear; rm -f '\(Self.helper)' /etc/sudoers.d/bearing", done: "Website blocking removed.")
     }
+#if os(macOS)
     private func admin(_ cmd: String, done: String) {
         var e: NSDictionary?
         NSAppleScript(source: "do shell script \"\(cmd)\" with administrator privileges")?.executeAndReturnError(&e)
@@ -214,6 +222,12 @@ import Observation
         observers.forEach(NSWorkspace.shared.notificationCenter.removeObserver); observers = []
         hosts(["clear"])
     }
+#else
+    private func admin(_ cmd: String, done: String) {}
+    private func hosts(_ args: [String]) {}
+    func engage() {}
+    func release() {}
+#endif
     /// A crash mid-session must not leave sites blocked.
     func clearStale() { hosts(["clear"]) }
 }
@@ -300,6 +314,7 @@ struct Track: Codable, Identifiable, Hashable {
             MainActor.assumeIsolated { Music.shared.next() }
         }
     }
+#if os(macOS)
     private func script(_ s: String) -> String? {
         var e: NSDictionary?
         let r = NSAppleScript(source: s)?.executeAndReturnError(&e)
@@ -315,6 +330,11 @@ struct Track: Codable, Identifiable, Hashable {
         _ = script("tell application \"\(a.name)\" to \(cmd)")
         return true
     }
+#else
+    private func script(_ s: String) -> String? { nil }
+    private var externalApp: (name: String, id: String)? { nil }
+    private func external(_ cmd: String) -> Bool { false }
+#endif
     private func buildQueue() {
         names = [:]
         switch prefs.musicSource {
@@ -358,11 +378,15 @@ struct Track: Codable, Identifiable, Hashable {
         player.replaceCurrentItem(with: AVPlayerItem(url: u))
         if playing { player.play() }
     }
+#if os(macOS)
     private func refreshExternal() {
         Task { try? await Task.sleep(for: .seconds(1))
             if let a = externalApp, NSWorkspace.shared.urlForApplication(withBundleIdentifier: a.id) != nil { nowPlaying = script("tell application \"\(a.name)\" to get name of current track") ?? "" }
         }
     }
+#else
+    private func refreshExternal() {}
+#endif
     /// Source or playlist changed.
     func reload() {
         let was = playing
