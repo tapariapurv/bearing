@@ -317,85 +317,11 @@ struct TaskBlockMenu: View {
             Button("Choose on the Week…") { Nav.shared.page = .week }
         } label: { Label("Time Block", systemImage: "calendar.badge.plus") }
         .fixedSize()
+        #if os(iOS)
+        .labelStyle(.iconOnly).buttonStyle(.borderless)
+        #endif
     }
 }
-struct TasksPage: View {
-    @State private var store = Store.shared
-    @State private var todoist = Todoist.shared
-    @State private var newTask = ""
-    @State private var goalFilter: UUID?
-    @State private var showDone = false
-    @State private var editing: TaskItem?
-    var body: some View {
-        let list = store.data.tasks.filter { (showDone || !$0.done) && (goalFilter == nil || $0.goalID == goalFilter) }
-            .sorted { ($0.done ? 1 : 0, $0.due ?? .distantFuture, -$0.priority) < ($1.done ? 1 : 0, $1.due ?? .distantFuture, -$1.priority) }
-        VStack(spacing: 0) {
-            HStack {
-                TextField("Add a task", text: $newTask).field().onSubmit {
-                    let t = newTask.trimmingCharacters(in: .whitespaces); if !t.isEmpty { store.addTask(t, goal: goalFilter); newTask = "" }
-                }
-                GoalPicker(label: "Goal", goal: $goalFilter).labelsHidden().frame(width: 170)
-                Toggle("Done", isOn: $showDone).toggleStyle(ChipToggle())
-            }.padding(12)
-            if list.isEmpty {
-                ContentUnavailableView("No tasks here", systemImage: "checklist", description: Text(store.data.todoistToken ? "Add one above, or in Todoist." : "Add one above. Connect Todoist in Settings to sync both ways."))
-            } else {
-                List(list) { t in
-                    HStack(spacing: 10) {
-                        Button { store.toggleDone(t) } label: { Image(systemName: t.done ? "checkmark.circle.fill" : "circle").foregroundStyle(t.done ? .green : (t.priority == 4 ? .red : t.priority == 3 ? .orange : .secondary)).font(.title3) }
-                            .buttonStyle(.plain).accessibilityLabel(t.done ? "Mark not done" : "Mark done")
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(t.title).strikethrough(t.done).lineLimit(2)
-                            HStack(spacing: 8) {
-                                if let d = t.due { Text(d.formatted(.dateTime.month(.abbreviated).day())).foregroundStyle(d < Date().startOfDay && !t.done ? .red : .secondary) }
-                                if !t.project.isEmpty { Text(t.project).foregroundStyle(.secondary) }
-                                if let g = store.goal(t.goalID) { GoalTag(goal: g) }
-                            }.font(.caption)
-                        }
-                        Spacer()
-                        if !t.done { TaskBlockMenu(task: t) }
-                    }
-                    .padding(.vertical, 2).contentShape(.rect)
-                    .onTapGesture(count: 2) { editing = t }
-                    .draggable(t.id.uuidString)
-                    .contextMenu {
-                        Button("Edit…") { editing = t }
-                        Button("Start Focus") { Focus.shared.begin(title: t.title, goal: t.goalID, task: t.id); Nav.shared.page = .focus }
-                        Divider()
-                        Button("Delete", role: .destructive) { store.deleteTask(t) }
-                    }
-                }.scrollContentBackground(.hidden)
-            }
-            Divider()
-            HStack {
-                Text(store.data.todoistToken ? todoist.status + (todoist.lastSync.map { " · \($0.clock)" } ?? "") : "Tasks stay on this Mac. Connect Todoist in Settings.").font(.caption).foregroundStyle(.secondary)
-                Spacer()
-                if store.data.todoistToken { Button("Sync Now") { todoist.nudge() }.controlSize(.small) }
-            }.padding(.horizontal, 12).padding(.vertical, 6)
-        }
-        .sheet(item: $editing) { TaskEditor(task: $0) }
-    }
-}
-struct TaskEditor: View {
-    @State var task: TaskItem
-    @Environment(\.dismiss) private var dismiss
-    var body: some View {
-        Form {
-            TextField("Task", text: $task.title)
-            TextField("Notes", text: $task.notes, axis: .vertical).lineLimit(2...6)
-            GoalPicker(goal: $task.goalID)
-            Dropdown("Priority", selection: $task.priority, options: [Opt("P1", 4), Opt("P2", 3), Opt("P3", 2), Opt("P4", 1)])
-            Toggle("Due date", isOn: Binding(get: { task.due != nil }, set: { task.due = $0 ? Date() : nil }))
-            if task.due != nil { DatePicker("Due", selection: Binding(get: { task.due ?? Date() }, set: { task.due = $0 }), displayedComponents: .date) }
-        }
-        .formStyle(.grouped).environment(\.fillRow, true).frame(width: 420)
-        .toolbar {
-            ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-            ToolbarItem(placement: .confirmationAction) { Button("Save") { Store.shared.updateTask(task); dismiss() } }
-        }
-    }
-}
-
 // MARK: - Week (time blocking)
 
 func hhmm(_ d: Date) -> String { let c = Calendar.current.dateComponents([.hour, .minute], from: d); return String(format: "%02d:%02d", c.hour ?? 0, c.minute ?? 0) }
@@ -1321,12 +1247,14 @@ struct SettingsView: View {
         #if os(iOS)
         List {
             NavigationLink { ConnectSettings().navigationTitle("Accounts") } label: { Label("Accounts", systemImage: "person.crop.circle") }
+            SystemSettings()
             NavigationLink { AISettings().navigationTitle("AI") } label: { Label("AI", systemImage: "sparkles") }
             NavigationLink { CreditsView().navigationTitle("Music Credits") } label: { Label("Music Credits", systemImage: "music.note") }
         }.navigationTitle("Settings")
         #else
         TabView {
             ConnectSettings().tabItem { Label("Accounts", systemImage: "person.crop.circle") }
+            Form { SystemSettings() }.formStyle(.grouped).tabItem { Label("System", systemImage: "square.grid.2x2") }
             AISettings().tabItem { Label("AI", systemImage: "sparkles") }
             BlockSettings().tabItem { Label("Blocking", systemImage: "hand.raised") }
             CreditsView().tabItem { Label("Music Credits", systemImage: "music.note") }

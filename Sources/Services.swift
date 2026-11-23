@@ -32,6 +32,7 @@ struct TDItem: Decodable {
     var checked: Bool?
     var is_deleted: Bool?
     var due: Due?
+    var labels: [String]?
 }
 struct TDProject: Decodable { var id: String, name: String; var is_deleted: Bool? }
 struct TDResponse: Decodable {
@@ -81,6 +82,7 @@ func applyTodoist(_ r: TDResponse, to d: inout AppData) -> String? {
         t.project = it.project_id.flatMap { d.projects[$0] } ?? ""
         t.priority = it.priority ?? 1; t.done = it.checked ?? false
         t.due = it.due.flatMap { parseTodoistDate($0.date) }
+        if let l = it.labels { d.applyLabels(l, to: &t) }
         if let i { d.tasks[i] = t } else { d.tasks.insert(t, at: 0) }
         // Titles follow the task onto its time blocks
         for b in d.blocks.indices where d.blocks[b].taskID == t.id { d.blocks[b].title = t.title }
@@ -434,7 +436,7 @@ struct AIActions: Decodable {
         o += accountContext
         o += "Open tasks:\n"
         for t in d.tasks.filter({ !$0.done }).sorted(by: { $0.priority > $1.priority }).prefix(40) {
-            o += "- \(t.title)\(s.goal(t.goalID).map { " [goal: \($0.title)]" } ?? "")\(t.due.map { " due \($0.dayKey)" } ?? "")\n"
+            o += "- \(t.title)\(s.goal(t.goalID).map { " [goal: \($0.title)]" } ?? "")\(d.labels(for: t).map { " #\($0)" }.joined())\(t.due.map { " due \($0.dayKey)" } ?? "")\n"
         }
         o += "Blocks this week (id | start | minutes | title):\n"
         let st = now.startOfWeek, en = st.adding(days: 7)

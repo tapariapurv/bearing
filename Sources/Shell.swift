@@ -161,35 +161,64 @@ struct TasksPanel: View {
     @State private var collapsed: Set<String> = []
     @State private var showSupport = true
     @State private var drafts: [String: String] = [:]
+    @State private var adding: Bool?   // true = class, false = project
+    @State private var subFor: Area?
+    @State private var newName = ""
     var body: some View {
+        @Bindable var nav = nav
         let goals = store.goals, main = goals.filter { $0.tier != .support }, support = goals.filter { $0.tier == .support }
+        let custom = store.data.prefs.system == .classes
+        let classic = !custom && nav.taskView.group == .goal && nav.taskView.name == "All tasks"   // the GPS sidebar as before
         ScrollView {
             VStack(alignment: .leading, spacing: 2) {
-                HStack {
-                    Text("Tasks").font(.system(size: 17, weight: .semibold))
+                HStack(spacing: 6) {
+                    Menu {
+                        ViewChips()
+                    } label: { Label(nav.taskView.name, systemImage: nav.taskView.icon).font(.system(size: 17, weight: .semibold)).labelStyle(.titleAndIcon) }
+                        .menuStyle(.button).buttonStyle(.plain).fixedSize().help("Switch view")
                     Spacer()
+                    ViewOptions(v: $nav.taskView)
                     IconButton(icon: "square.and.arrow.down", label: "Sync Todoist") { Todoist.shared.nudge() }
-                    IconButton(icon: "line.3.horizontal.decrease", label: "All tasks") { nav.page = .tasks }
+                    IconButton(icon: "list.bullet", label: "All tasks") { nav.page = .tasks }
                 }.padding(.bottom, 8)
-                header("Season goals") { nav.seasonSetup = true }
-                if main.isEmpty {
-                    Button("Set up your season") { nav.seasonSetup = true }.padding(.vertical, 6)
-                }
-                ForEach(main) { g in group(g.id.uuidString, g.title, goal: g) }
-                Button { showSupport.toggle() } label: {
-                    HStack(spacing: 4) {
-                        Text("Support areas")
-                        Image(systemName: "chevron.right").font(.system(size: 9, weight: .bold)).rotationEffect(.degrees(showSupport ? 90 : 0))
-                        Spacer()
-                    }.font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary).padding(.top, 14).padding(.bottom, 4).contentShape(.rect)
-                }.buttonStyle(.plain).accessibilityLabel(showSupport ? "Hide support areas" : "Show support areas")
-                if showSupport {
-                    group("inbox", "Inbox", goal: nil)
-                    ForEach(support) { g in group(g.id.uuidString, g.title, goal: g) }
+                if classic {
+                    header("Season goals") { nav.seasonSetup = true }
+                    if main.isEmpty { Button("Set up your season") { nav.seasonSetup = true }.padding(.vertical, 6) }
+                    ForEach(main) { g in group(TaskBucket(title: g.title, rank: 0, goal: g.id, tasks: open(goal: g.id))) }
+                    Button { showSupport.toggle() } label: {
+                        HStack(spacing: 4) {
+                            Text("Support areas")
+                            Image(systemName: "chevron.right").font(.system(size: 9, weight: .bold)).rotationEffect(.degrees(showSupport ? 90 : 0))
+                            Spacer()
+                        }.font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary).padding(.top, 14).padding(.bottom, 4).contentShape(.rect)
+                    }.buttonStyle(.plain).accessibilityLabel(showSupport ? "Hide support areas" : "Show support areas")
+                    if showSupport {
+                        group(TaskBucket(title: "Inbox", rank: 0, tasks: open(goal: nil)))
+                        ForEach(support) { g in group(TaskBucket(title: g.title, rank: 0, goal: g.id, tasks: open(goal: g.id))) }
+                    }
+                } else {
+                    ForEach(nav.taskView.buckets(store)) { group($0) }
+                    if custom {
+                        HStack {
+                            Button("+ Class") { newName = ""; adding = true }
+                            Button("+ Project") { newName = ""; adding = false }
+                        }.buttonStyle(.plain).font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary).padding(.top, 12)
+                    }
                 }
             }.padding(14)
         }
+        .alert(adding == true ? "New class" : "New project", isPresented: Binding(get: { adding != nil }, set: { if !$0 { adding = nil } })) {
+            TextField("Name", text: $newName)
+            Button("Add") { if !newName.isEmpty, let c = adding { store.data.areas = (store.data.areas ?? []) + [Area(name: newName, isClass: c)] } }
+            Button("Cancel", role: .cancel) {}
+        }
+        .alert("New sub-project", isPresented: Binding(get: { subFor != nil }, set: { if !$0 { subFor = nil } })) {
+            TextField("Name", text: $newName)
+            Button("Add") { if !newName.isEmpty, let a = subFor, let i = store.data.areas?.firstIndex(where: { $0.id == a.id }) { store.data.areas![i].subs = (a.subs ?? []) + [newName] } }
+            Button("Cancel", role: .cancel) {}
+        }
     }
+    private func open(goal: UUID?) -> [TaskItem] { store.data.tasks.filter { !$0.done && $0.goalID == goal } }
     private func header(_ t: String, add: @escaping () -> Void) -> some View {
         HStack {
             Text(t).font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary)
@@ -197,24 +226,34 @@ struct TasksPanel: View {
             IconButton(icon: "plus", label: "New season", action: add)
         }
     }
-    @ViewBuilder private func group(_ key: String, _ title: String, goal: Goal?) -> some View {
-        let open = !collapsed.contains(key)
+    @ViewBuilder private func group(_ b: TaskBucket) -> some View {
+        let key = b.title, open = !collapsed.contains(key)
+        let area = store.data.areas?.first { $0.id == b.area }
         Button { if open { collapsed.insert(key) } else { collapsed.remove(key) } } label: {
             HStack(spacing: 9) {
-                if let goal { GoalIcon(goal: goal, size: 24) }
-                else { Image(systemName: "tray").font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary).frame(width: 24, height: 24).background(Color.primary.opacity(0.07), in: .rect(cornerRadius: 7)) }
-                Text(title).font(.system(size: 13, weight: .medium)).lineLimit(1)
+                if let g = store.goal(b.goal) { GoalIcon(goal: g, size: 24) }
+                else { Image(systemName: area.map { b.sub != nil ? "folder" : $0.isClass ? "graduationcap" : "folder" } ?? "tray").font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary).frame(width: 24, height: 24).background(Color.primary.opacity(0.07), in: .rect(cornerRadius: 7)) }
+                Text(b.sub ?? b.title).font(.system(size: 13, weight: .medium)).lineLimit(1)
                 Spacer(minLength: 0)
-            }.padding(.vertical, 5).contentShape(.rect)
+            }.padding(.vertical, 5).padding(.leading, b.sub != nil ? 16 : 0).contentShape(.rect)
         }.buttonStyle(.plain).accessibilityValue(open ? "Expanded" : "Collapsed")
+        .contextMenu {
+            if let area {
+                if area.isClass && b.sub == nil { Button("New Sub-project…") { newName = ""; subFor = area } }
+                Button("Delete \(b.sub ?? area.name)", role: .destructive) {
+                    if let s = b.sub { if let i = store.data.areas?.firstIndex(where: { $0.id == area.id }) { store.data.areas![i].subs?.removeAll { $0 == s } } }
+                    else { store.data.areas?.removeAll { $0.id == area.id } }
+                }
+            }
+        }
         if open {
-            ForEach(store.data.tasks.filter { !$0.done && $0.goalID == goal?.id }) { taskRow($0) }
+            ForEach(b.tasks) { taskRow($0) }
             HStack(spacing: 8) {
                 Image(systemName: "plus").font(.system(size: 11, weight: .medium)).frame(width: 16)
                 TextField("Add task…", text: Binding(get: { drafts[key, default: ""] }, set: { drafts[key] = $0 })).textFieldStyle(.plain)
                     .onSubmit {
                         let t = drafts[key, default: ""].trimmingCharacters(in: .whitespaces)
-                        if !t.isEmpty { store.addTask(t, goal: goal?.id); drafts[key] = "" }
+                        if !t.isEmpty { store.addTask(t, goal: b.goal, area: b.area, sub: b.sub, due: b.due); drafts[key] = "" }
                     }
             }.font(.system(size: 13)).foregroundStyle(.secondary).padding(.leading, 33).padding(.vertical, 5)
         }

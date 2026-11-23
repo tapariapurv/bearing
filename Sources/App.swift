@@ -20,6 +20,7 @@ enum Page: String, CaseIterable, Identifiable {
     var page = Page.today
     var coachDraft = ""        // text waiting in the coach composer
     var seasonSetup = false
+    var taskView = TaskView.all(Store.shared.data.prefs.system == .classes)
     var dailySync = false
     var reflect = false
     var showTasks = true       // left tasks panel
@@ -300,6 +301,12 @@ struct MenuBarView: View {
                         TaskItem(title: "Book physio appointment", goalID: g[1].id, due: now.adding(days: 1)),
                         TaskItem(todoistID: "2", title: "Draft first newsletter issue", project: "Newsletter", goalID: g[2].id, priority: 3),
                         TaskItem(title: "Renew passport", due: now.adding(days: 6))]
+        let bio = Area(name: "Bio 101"), web = Area(name: "Portfolio site", isClass: false)
+        s.data.areas = [bio, Area(name: "Econ 210"), web]; s.data.prefs.system = .classes; Nav.shared.taskView = .all(true)
+        s.data.tasks += [TaskItem(title: "Write lab report", due: now.adding(days: 2), priority: 3, areaID: bio.id, sub: "Lab 4", resources: ["https://drive.google.com/drive/folders/demo"]),
+                         TaskItem(title: "Read chapter 5", due: now, areaID: bio.id),
+                         TaskItem(title: "Design home page", due: now.adding(days: 9), areaID: web.id)]
+        s.data.views = [TaskView(name: "Due soon", icon: "calendar", group: .due), TaskView(name: "By class", icon: "graduationcap", group: .area, sort: .priority)]
         func at(_ d: Int, _ h: Int, _ m: Int) -> (Date, Date) { let a = week.adding(days: d).addingTimeInterval(Double(h) * 3600); return (a, a.addingTimeInterval(Double(m) * 60)) }
         for (d, h, m, t, i) in [(1, 9, 120, "Write: chapter 6", 0), (2, 9, 120, "Write: chapter 7", 0), (3, 7, 45, "Easy run", 1), (3, 9, 150, "Write: revisions", 0), (4, 9, 120, "Write: chapter 8", 0), (5, 8, 90, "Long run", 1)] {
             let (a, b) = at(d, h, m); s.data.blocks.append(Block(title: t, start: a, end: b, goalID: g[i].id))
@@ -525,6 +532,11 @@ extension Snapshot {
     check(Coach.fallbackQuestions([Goal(title: "Run")]).allSatisfy { (2...4).contains($0.options.count) }, "fallback season questions have 2 to 4 options")
     check(Coach.presets.allSatisfy { $0.options.count == 4 }, "coach preset questions have 4 options")
     let n0 = Store.shared.data.about?.count ?? 0; Coach.remember("Q", "A"); check(Store.shared.data.about?.count == n0 + 1, "coach remembers answers"); Store.shared.data.about?.removeLast()
+    var ad = AppData(); let cl = Area(name: "Bio 101"); ad.areas = [cl, Area(name: "Website", isClass: false)]
+    var lt = TaskItem(title: "Lab", areaID: cl.id, sub: "Lab report"); check(ad.labels(for: lt) == ["Bio 101", "Lab report"], "class task labels carry class and sub-project")
+    lt.areaID = nil; ad.applyLabels(["Lab report", "Bio 101"], to: &lt); check(lt.areaID == cl.id && lt.sub == "Lab report", "labels map back to class and sub-project")
+    ad.applyLabels(["Website", "x"], to: &lt); check(lt.areaID == ad.areas?[1].id && lt.sub == nil, "standalone projects have no sub-project")
+    check(TaskEditor.url("/tmp/a.pdf")?.isFileURL == true && TaskEditor.url("drive.google.com/x")?.scheme == "https", "resource links resolve")
     check(Profile(name: "Purv Taparia").initials == "PT" && Profile(email: "a@b.c").initials == "A", "profile initials")
     let ft = Coach.fresh([.init(title: "Email Sam"), .init(title: "email  sam!"), .init(title: "Book flight")], existing: ["Book Flight"])
     check(ft.map(\.title) == ["Email Sam"], "found tasks drop duplicates of existing and each other")

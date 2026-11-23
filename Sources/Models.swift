@@ -34,6 +34,9 @@ struct TaskItem: Codable, Identifiable, Hashable {
     var due: Date?
     var priority = 1           // Todoist scale: 4 is P1
     var done = false
+    var areaID: UUID?          // class or project (custom system)
+    var sub: String?           // sub-project tag inside a class
+    var resources: [String]?   // links, Drive links, file paths
 }
 struct Block: Codable, Identifiable, Hashable {
     var id = UUID()
@@ -94,15 +97,15 @@ struct TodoistCommand: Codable, Hashable {
     var args: [String: JSONValue]
 }
 enum JSONValue: Codable, Hashable {
-    case string(String), int(Int), object([String: String]), null
+    case string(String), int(Int), object([String: String]), list([String]), null
     func encode(to e: Encoder) throws {
         var c = e.singleValueContainer()
-        switch self { case .string(let s): try c.encode(s); case .int(let i): try c.encode(i); case .object(let o): try c.encode(o); case .null: try c.encodeNil() }
+        switch self { case .string(let s): try c.encode(s); case .int(let i): try c.encode(i); case .object(let o): try c.encode(o); case .list(let l): try c.encode(l); case .null: try c.encodeNil() }
     }
     init(from d: Decoder) throws {
         let c = try d.singleValueContainer()
         if c.decodeNil() { self = .null } else if let i = try? c.decode(Int.self) { self = .int(i) }
-        else if let s = try? c.decode(String.self) { self = .string(s) } else { self = .object(try c.decode([String: String].self)) }
+        else if let s = try? c.decode(String.self) { self = .string(s) } else if let l = try? c.decode([String].self) { self = .list(l) } else { self = .object(try c.decode([String: String].self)) }
     }
 }
 enum TimerMode: String, Codable, CaseIterable { case stopwatch = "Stopwatch", countdown = "Timer", pomodoro = "Pomodoro" }
@@ -132,6 +135,7 @@ struct Prefs: Codable {
     var playOnFocus = true
     var lastScan: Date?        // last time Coach.findTasks read mail and notes
     var profile: Profile?      // signed-in Google account; nil shows the welcome screen
+    var system: AppSystem?     // nil is GPS
 }
 struct Profile: Codable, Hashable {
     var name = "", email = ""
@@ -155,6 +159,8 @@ struct AppData: Codable {
     var projects: [String: String] = [:]
     var prefs = Prefs()
     var seasonQA: [QA]?        // answers from season setup
+    var areas: [Area]?         // classes and standalone projects
+    var views: [TaskView]?     // saved task views
     var about: [QA]?           // answers to the coach's get-to-know-you questions (recent)
     var aboutSummary: String?  // older answers, compacted by the model
     var reflections: [Reflection]?
@@ -251,12 +257,15 @@ extension Color {
     }
 
     // MARK: Task mutations (each one queues a Todoist command)
-    func addTask(_ title: String, goal: UUID? = nil) {
-        var t = TaskItem(title: title, goalID: goal)
+    func addTask(_ title: String, goal: UUID? = nil, area: UUID? = nil, sub: String? = nil, due: Date? = nil) {
+        var t = TaskItem(title: title, goalID: goal, due: due, areaID: area, sub: sub)
         if data.todoistToken {
             let temp = UUID().uuidString
             t.todoistID = temp
-            data.outbox.append(TodoistCommand(type: "item_add", tempID: temp, taskID: t.id, args: ["content": .string(title)]))
+            var a: [String: JSONValue] = ["content": .string(title)]
+            let l = data.labels(for: t); if !l.isEmpty { a["labels"] = .list(l) }
+            if let due { a["due"] = .object(["date": due.dayKey]) }
+            data.outbox.append(TodoistCommand(type: "item_add", tempID: temp, taskID: t.id, args: a))
         }
         data.tasks.insert(t, at: 0)
         Todoist.shared.nudge()
@@ -269,6 +278,7 @@ extension Color {
         if old.title != t.title { a["content"] = .string(t.title) }
         if old.notes != t.notes { a["description"] = .string(t.notes) }
         if old.priority != t.priority { a["priority"] = .int(t.priority) }
+        if data.labels(for: old) != data.labels(for: t) { a["labels"] = .list(data.labels(for: t)) }
         if old.due != t.due { a["due"] = t.due.map { .object(["date": $0.dayKey]) } ?? .null }
         if a.count > 1 { data.outbox.append(TodoistCommand(type: "item_update", args: a)); Todoist.shared.nudge() }
     }

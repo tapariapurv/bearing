@@ -27,21 +27,22 @@ struct PhoneRoot: View {
     @State private var store = Store.shared
     private let more: [(Page, String, String)] = [(.goals, "Goals", "scope"), (.focus, "Focus", "timer"), (.journal, "Journal", "book"),
                                                   (.capture, "Capture", "waveform"), (.insights, "Insights", "chart.bar")]
+    @State private var tab = CommandLine.arguments.contains("--tasks") ? "Tasks" : "Today"   // --tasks: open on Tasks (screenshots)
     var body: some View {
         Group {
             if store.data.prefs.profile == nil { NavigationStack { WelcomeView() } }
             else {
-                TabView {
-                    Tab("Today", systemImage: "sun.max") {
+                TabView(selection: $tab) {
+                    Tab("Today", systemImage: "sun.max", value: "Today") {
                         NavigationStack {
                             PageView(page: .today).toolbar { NavigationLink { ScrollView { DayPanel() }.navigationTitle("Today") } label: { Label("Summary", systemImage: "chart.pie") } }
                                 .toolbarTitleDisplayMode(.inline)
                         }
                     }
-                    Tab("Week", systemImage: "calendar") { NavigationStack { PageView(page: .week) } }
-                    Tab("Tasks", systemImage: "checklist") { NavigationStack { PageView(page: .tasks) } }
-                    Tab("Coach", systemImage: "sparkles") { NavigationStack { PageView(page: .coach) } }
-                    Tab("More", systemImage: "ellipsis") {
+                    Tab("Week", systemImage: "calendar", value: "Week") { NavigationStack { PageView(page: .week) } }
+                    Tab("Tasks", systemImage: "checklist", value: "Tasks") { NavigationStack { PageView(page: .tasks) } }
+                    Tab("Coach", systemImage: "sparkles", value: "Coach") { NavigationStack { PageView(page: .coach) } }
+                    Tab("More", systemImage: "ellipsis", value: "More") {
                         NavigationStack {
                             List {
                                 ForEach(more, id: \.0) { p in NavigationLink { PageView(page: p.0).navigationTitle(p.1) } label: { Label(p.1, systemImage: p.2) } }
