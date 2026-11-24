@@ -377,6 +377,7 @@ struct WeekPage: View {
         }
         .sheet(item: $editing) { BlockEditor(block: $0) }
         .sheet(item: $draft) { PlanSheet(draft: $0.draft) }
+        .onAppear { if dayMode, let d = Nav.shared.jump { start = d; Nav.shared.jump = nil } }
     }
     private func round(_ icon: String, _ label: String, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
@@ -525,26 +526,11 @@ struct DayColumn: View {
             let blocks = store.blocks(on: day)
             let lane = Self.lanes(events.map { ($0.id, $0.start, $0.end) } + blocks.map { ($0.id.uuidString, $0.start, $0.end) })
             ForEach(events) { e in
-                let goal = store.goal(store.data.prefs.eventGoals[e.id])
-                let c = goal.map { goalColor($0.color) } ?? e.color
+                let c = store.linkTint(store.data.prefs.eventGoals[e.id]) ?? e.color
                 let l = lane[e.id] ?? (0, 1), w = colW / CGFloat(l.1)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(e.title).font(.caption.weight(.semibold)).lineLimit(2)
-                    if y(e.end) - y(e.start) > 34 { Text("\(hhmm(e.start)) - \(hhmm(e.end))").font(.caption2).opacity(0.8) }
-                }.padding(6)
+                EventChip(event: e, color: c, short: y(e.end) - y(e.start) <= 34)
                     .frame(width: w - 6, height: max(18, y(e.end) - y(e.start) - 2), alignment: .topLeading)
-                    .background(c.wash, in: .rect(cornerRadius: 8)).foregroundStyle(c.ink)
-                    .modifier(HoverPeek {
-                        Text(e.title).font(.headline)
-                        PeekRow(icon: "clock", text: span(e.start, e.end))
-                        PeekRow(icon: "calendar", text: "From your calendar")
-                        if let goal { PeekRow(icon: "scope", text: "Counts toward \(goal.title)") }
-                    })
                     .offset(x: 3 + CGFloat(l.0) * w, y: y(e.start) + 1)
-                    .contextMenu {
-                        ForEach(store.goals) { g in Button("Counts toward \(g.title)") { store.data.prefs.eventGoals[e.id] = g.id } }
-                        if goal != nil { Button("Remove Goal") { store.data.prefs.eventGoals[e.id] = nil } }
-                    }
             }
             ForEach(blocks) { b in BlockView(block: b, colW: colW, top: y(b.start), height: y(b.end) - y(b.start), lane: lane[b.id.uuidString] ?? (0, 1), editing: $editing) }
             if Calendar.current.isDateInToday(day) {
@@ -647,14 +633,6 @@ struct BlockView: View {
         .background(Color.surface, in: .rect(cornerRadius: 8))
         .overlay { RoundedRectangle(cornerRadius: 8).fill(c.opacity(0.22)).allowsHitTesting(false) }
         .overlay(alignment: .leading) { RoundedRectangle(cornerRadius: 2).fill(c).frame(width: 3).padding(.vertical, 4).padding(.leading, 2).allowsHitTesting(false) }
-        .modifier(HoverPeek(active: !moving && !detail && grow == 0) {
-            Text(block.title).font(.headline)
-            PeekRow(icon: "clock", text: span(block.start, block.end))
-            if let g = store.goal(block.goalID) { PeekRow(icon: "scope", text: g.title) }
-            if let e = block.energy { PeekRow(icon: e == .energizing ? "bolt.fill" : "battery.25percent", text: e.rawValue.capitalized) }
-            if let d = block.done { PeekRow(icon: d ? "checkmark.circle.fill" : "xmark.circle", text: d ? "Done" : "Not done") }
-            Text("Click for details · drag to move").font(.caption).foregroundStyle(.tertiary)
-        })
         .popover(isPresented: $detail, arrowEdge: .trailing) { BlockDetail(block: block, editing: $editing, shown: $detail) }
         .overlay(alignment: .bottom) {
             Color.clear.frame(height: 8).contentShape(.rect)
@@ -754,6 +732,7 @@ struct TimerButtons: View {
     }
 }
 struct FocusPage: View {
+    @State private var more = false
     @State private var suggesting = false
     @State private var focus = Focus.shared
     @State private var store = Store.shared
@@ -763,8 +742,8 @@ struct FocusPage: View {
         let tint = store.goal(focus.goalID).map { goalColor($0.color) } ?? Color.brand
         let ring = focus.phase == .rest && focus.active ? goalPalette[4] : tint
         Scroll {
-            Card(accent: store.goal(focus.goalID).map { goalColor($0.color) }) {
-                VStack(spacing: 14) {
+            VStack(spacing: 22) {
+                VStack(spacing: 18) {
                     if focus.active {
                         Text(focus.phase == .rest ? "Break" : (focus.title.isEmpty ? "Focus" : focus.title)).font(.title3.weight(.semibold))
                     } else {
@@ -785,7 +764,7 @@ struct FocusPage: View {
                             Circle().trim(from: 0, to: focus.progress).stroke(ring, style: .init(lineWidth: 10, lineCap: .round)).rotationEffect(.degrees(-90))
                         }
                         Text(focus.active ? focus.display : idleDisplay).font(.system(size: 64, weight: .bold, design: .rounded)).monospacedDigit().foregroundStyle(focus.active ? ring.ink : Color.primary)
-                    }.frame(width: 260, height: 260)
+                    }.frame(width: 260, height: 260).animation(.easeOut(duration: 0.3), value: focus.progress)
                     if focus.active {
                         if focus.mode == .pomodoro { Text("Round \(focus.cycle) of \(store.data.prefs.cycles)").foregroundStyle(.secondary) }
                         TimerButtons()
@@ -794,12 +773,11 @@ struct FocusPage: View {
                         settings
                     }
                 }.frame(maxWidth: .infinity)
-            }
+            }.padding(.top, 12)
             if let r = focus.finished, !focus.active { FocusSummary(session: r) }
-            HStack(alignment: .top, spacing: 16) {
-                MusicCard()
-                BlockCard().frame(maxWidth: 340)
-            }
+            DisclosureGroup(isExpanded: $more) {
+                HStack(alignment: .top, spacing: 16) { MusicCard(); BlockCard().frame(maxWidth: 340) }.padding(.top, 12)
+            } label: { Text("Sound and blocking").font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary) }
         }
     }
     private var idleDisplay: String {
@@ -810,14 +788,21 @@ struct FocusPage: View {
         @Bindable var s = store
         switch s.data.prefs.timerMode {
         case .stopwatch: Text("Counts up until you stop.").font(.caption).foregroundStyle(.secondary)
-        case .countdown: Step("\(s.data.prefs.countdownMinutes) minutes", value: $s.data.prefs.countdownMinutes, in: 5...240, step: 5).fixedSize()
+        case .countdown: slider("Length", "\(s.data.prefs.countdownMinutes) min", $s.data.prefs.countdownMinutes, 5...240, 5).frame(maxWidth: 360)
         case .pomodoro:
-            HStack(spacing: 16) {
-                Step("Focus \(s.data.prefs.workMinutes)m", value: $s.data.prefs.workMinutes, in: 5...120, step: 5)
-                Step("Break \(s.data.prefs.breakMinutes)m", value: $s.data.prefs.breakMinutes, in: 1...30)
-                Step("Long \(s.data.prefs.longBreakMinutes)m", value: $s.data.prefs.longBreakMinutes, in: 5...60, step: 5)
-                Step("\(s.data.prefs.cycles) rounds", value: $s.data.prefs.cycles, in: 1...8)
-            }.fixedSize()
+            Grid(horizontalSpacing: 14, verticalSpacing: 10) {
+                slider("Focus", "\(s.data.prefs.workMinutes) min", $s.data.prefs.workMinutes, 5...120, 5)
+                slider("Break", "\(s.data.prefs.breakMinutes) min", $s.data.prefs.breakMinutes, 1...30, 1)
+                slider("Rounds", "\(s.data.prefs.cycles)", $s.data.prefs.cycles, 1...8, 1)
+            }.frame(maxWidth: 360)
+        }
+    }
+    /// A Liquid Glass slider over whole numbers.
+    private func slider(_ t: String, _ v: String, _ x: Binding<Int>, _ r: ClosedRange<Int>, _ step: Int) -> some View {
+        GridRow {
+            Text(t).font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary).gridColumnAlignment(.leading)
+            Slider(value: Binding(get: { Double(x.wrappedValue) }, set: { x.wrappedValue = Int($0) }), in: Double(r.lowerBound)...Double(r.upperBound), step: Double(step)).tint(.brand)
+            Text(v).font(.system(size: 13, weight: .semibold)).monospacedDigit().frame(width: 56, alignment: .trailing)
         }
     }
 }
@@ -1193,60 +1178,82 @@ struct NotesSheet: View {
 // MARK: - Insights
 
 struct InsightsPage: View {
+    enum Span: String, CaseIterable { case week = "Week", month = "Month", season = "Season" }
     @State private var store = Store.shared
+    @State private var span = Span.week
     var body: some View {
-        let week = Date().startOfWeek
-        let thisWeek = store.data.sessions.filter { $0.start >= week }
-        let total = thisWeek.reduce(0) { $0 + $1.seconds }
-        let quality = thisWeek.isEmpty ? 0 : thisWeek.map(\.quality).reduce(0, +) / thisWeek.count
-        let days = (0..<7).map { week.adding(days: $0).formatted(.dateTime.weekday(.abbreviated)) }
+        let from = span == .week ? Date().startOfWeek : span == .month ? Calendar.current.dateInterval(of: .month, for: Date())!.start : store.data.seasonStart
+        let days = max(1, Calendar.current.dateComponents([.day], from: from.startOfDay, to: Date()).day! + 1)
+        let ss = store.data.sessions.filter { $0.start >= from }
+        let done = store.data.tasks.filter { $0.done && ($0.doneAt ?? .distantPast) >= from }
+        let open = store.data.tasks.filter { !$0.done }
+        let overdue = open.filter { ($0.due ?? .distantFuture) < Date().startOfDay }.count
+        let focusDays = Set(ss.map { $0.start.dayKey }).count
+        let total = ss.reduce(0) { $0 + $1.seconds }
+        let areas = (store.data.areas ?? []).filter(\.active)
+        let taskArea = Dictionary(store.data.tasks.map { ($0.id, $0.areaID) }, uniquingKeysWith: { a, _ in a })
         Scroll {
-            HStack(spacing: 16) {
-                stat("Focused this week", hm(total), goalPalette[0])
-                stat("Sessions", "\(thisWeek.count)", goalPalette[2])
-                stat("Average quality", thisWeek.isEmpty ? "None yet" : "\(quality)", goalPalette[3])
+            HStack {
+                Text("Stats").font(.system(size: 26, weight: .bold))
+                Spacer()
+                Segments(selection: $span, options: Span.allCases.map { Opt($0.rawValue, $0) }).frame(width: 240)
             }
-            AccountabilityCard()
-            Card(title: "This Week by Day") {
-                Chart(thisWeek) { s in
-                    BarMark(x: .value("Day", s.start.formatted(.dateTime.weekday(.abbreviated))), y: .value("Hours", s.seconds / 3600), width: .ratio(0.6))
-                        .foregroundStyle(store.goal(s.goalID).map { goalColor($0.color) } ?? Color.gray.opacity(0.5)).cornerRadius(3)
-                }.chartXScale(domain: days).frame(height: 180).accessibilityLabel("Focus hours by day this week, colored by goal")
-                HStack(spacing: 6) { ForEach(store.goals) { GoalTag(goal: $0) } }
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 14)], spacing: 14) {
+                stat("Focused", hm(total), "\(hm(total / Double(days))) a day")
+                stat("Tasks done", "\(done.count)", "\(open.count) open")
+                stat("Overdue", "\(overdue)", overdue == 0 ? "All caught up" : "Need a date or a decision")
+                stat("Focus days", "\(focusDays) of \(days)", "\(ss.count) sessions")
             }
-            Card(title: "By Goal") {
+            Card(title: "Each Day") {
+                let keys = (0..<min(days, 31)).map { from.adding(days: $0) }
+                Chart {
+                    ForEach(ss) { s in
+                        BarMark(x: .value("Day", s.start.startOfDay, unit: .day), y: .value("Hours", s.seconds / 3600))
+                            .foregroundStyle(store.goal(s.goalID).map { goalColor($0.color) } ?? Color.brand.opacity(0.5)).cornerRadius(3)
+                    }
+                    ForEach(keys, id: \.self) { d in
+                        let n = done.filter { Calendar.current.isDate($0.doneAt!, inSameDayAs: d) }.count
+                        if n > 0 { PointMark(x: .value("Day", d, unit: .day), y: .value("Tasks", Double(n) / 2)).symbol(.circle).foregroundStyle(Color.primary.opacity(0.7)) }
+                    }
+                }.frame(height: 200).chartYAxisLabel("Hours focused")
+                Text("Bars: hours focused, colored by goal. Dots: tasks done (half-hour per task).").font(.caption).foregroundStyle(.secondary)
+            }
+            Card(title: store.data.prefs.system == .classes ? "Classes and Projects" : "Projects") {
+                if areas.isEmpty { Text("Add a class or project to see this.").foregroundStyle(.secondary) }
+                ForEach(areas) { a in
+                    let ts = store.data.tasks.filter { $0.areaID == a.id }
+                    let d = ts.filter { $0.done && ($0.doneAt ?? .distantPast) >= from }.count, o = ts.filter { !$0.done }.count
+                    let sec = ss.filter { $0.taskID.flatMap { taskArea[$0] ?? nil } == a.id }.reduce(0) { $0 + $1.seconds }
+                    HStack(spacing: 12) {
+                        AreaIcon(area: a, size: 26)
+                        Text(a.name).lineLimit(1).frame(width: 170, alignment: .leading)
+                        GoalBar(value: d + o > 0 ? Double(d) / Double(d + o) : 0, color: a.tint)
+                        Text("\(d) done · \(o) open · \(hm(sec))").font(.caption).foregroundStyle(.secondary).monospacedDigit().frame(width: 170, alignment: .trailing)
+                    }
+                }
+            }
+            Card(title: "Goals") {
                 if store.goals.isEmpty { Text("Add a goal to see this.").foregroundStyle(.secondary) }
                 ForEach(store.goals) { g in
-                    let sec = store.focused(goal: g.id, since: store.data.seasonStart), w = store.focused(goal: g.id, since: week) / 3600
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack { Text(g.title); Spacer(); Text("\(String(format: "%.1f", w)) of \(String(format: "%g", g.weeklyHours))h this week · \(hm(sec)) this season").font(.caption).foregroundStyle(.secondary).monospacedDigit() }
-                        GoalBar(value: g.weeklyHours > 0 ? w / g.weeklyHours : 0, color: goalColor(g.color))
+                    let w = store.focused(goal: g.id, since: from) / 3600, target = g.weeklyHours * Double(days) / 7
+                    HStack(spacing: 12) {
+                        GoalIcon(goal: g, size: 26)
+                        Text(g.title).lineLimit(1).frame(width: 170, alignment: .leading)
+                        GoalBar(value: target > 0 ? w / target : 0, color: goalColor(g.color))
+                        Text("\(String(format: "%.1f", w)) of \(String(format: "%.0f", target))h").font(.caption).foregroundStyle(.secondary).monospacedDigit().frame(width: 170, alignment: .trailing)
                     }
                 }
             }
-            Card(title: "Recent Sessions") {
-                let recent = store.data.sessions.sorted { $0.start > $1.start }.prefix(10)
-                if recent.isEmpty { Text("Finished sessions appear here.").foregroundStyle(.secondary) }
-                ForEach(Array(recent)) { s in
-                    HStack(spacing: 8) {
-                        Circle().fill(store.goal(s.goalID).map { goalColor($0.color) } ?? Color.secondary.opacity(0.4)).frame(width: 8, height: 8)
-                        Text(s.title).lineLimit(1)
-                        Spacer()
-                        Text("\(s.start.formatted(.dateTime.month(.abbreviated).day())) · \(hm(s.seconds))").font(.caption).foregroundStyle(.secondary).monospacedDigit()
-                        let q = s.quality >= 70 ? GoalStatus.onTrack.color : s.quality >= 40 ? GoalStatus.adjust.color : GoalStatus.offTrack.color
-                        Text("\(s.quality)").font(.caption.weight(.semibold)).monospacedDigit().foregroundStyle(q.ink).frame(width: 34).padding(.vertical, 1).background(q.wash, in: .capsule).accessibilityLabel("Quality \(s.quality)")
-                    }
-                }
-            }
-            CoachBrief(title: "Weekly Coaching", button: "Get This Week's Review", prompt: "Give me an honest review of my season so far. Be blunt: say plainly which goals I'm neglecting and where my time is going against my priorities, using the accountability numbers, my reflections and energy tags. Then give one specific fix per problem, and say what to drop if I'm overcommitted. No flattery. Under 180 words.")
+            AccountabilityCard()
+            CoachBrief(title: "Weekly Coaching", button: "Get This Week's Review", prompt: "Give me an honest review of my season so far. Be blunt: say plainly which goals, classes and projects I'm neglecting and where my time is going against my priorities, using the accountability numbers, my tasks, reflections and energy tags. Then give one specific fix per problem, and say what to drop if I'm overcommitted. No flattery. Under 180 words.")
         }
     }
-    private func stat(_ t: String, _ v: String, _ c: Color) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(t).font(.caption.weight(.medium))
-            Text(v).font(.system(size: 28, weight: .bold, design: .rounded)).monospacedDigit()
-        }
-        .foregroundStyle(c.ink).padding(16).frame(maxWidth: .infinity, alignment: .leading).background(c.wash, in: .rect(cornerRadius: 14))
+    private func stat(_ t: String, _ v: String, _ sub: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(t).font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary)
+            Text(v).font(.system(size: 28, weight: .bold, design: .rounded)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.6)
+            Text(sub).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+        }.padding(18).frame(maxWidth: .infinity, alignment: .leading).surface(16)
     }
 }
 
@@ -1283,6 +1290,9 @@ struct AISettings: View {
         @Bindable var s = store
         let p = s.data.prefs.provider
         Form {
+            Section {
+                TextEditor(text: Binding(get: { s.data.prefs.coachNotes ?? "" }, set: { s.data.prefs.coachNotes = $0.isEmpty ? nil : $0 })).font(.callout).frame(minHeight: 80)
+            } header: { Text("Instructions for the coach") } footer: { Text("How it should talk to you and what it should always keep in mind. Sent with every request.").font(.caption).foregroundStyle(.secondary) }
             Dropdown("Provider", selection: $s.data.prefs.provider, options: AIProvider.allCases.map { Opt($0.name, $0) })
             if p == .custom { TextField("Server address", text: $s.data.prefs.customURL) }
             if p == .bearing {
@@ -1459,5 +1469,57 @@ struct MemoryList: View {
                 }
             }
         }.padding(16)
+    }
+}
+
+/// A calendar event in the grid. Click for its details, links and what it counts toward.
+struct EventChip: View {
+    let event: CalEvent, color: Color, short: Bool
+    @State private var shown = false
+    var body: some View {
+        Button { shown = true } label: {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(event.title).font(.caption.weight(.semibold)).lineLimit(2)
+                if !short { Text("\(hhmm(event.start)) - \(hhmm(event.end))").font(.caption2).opacity(0.8) }
+            }.padding(6).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(color.wash, in: .rect(cornerRadius: 8)).foregroundStyle(color.ink).contentShape(.rect)
+        }.buttonStyle(.plain)
+        .popover(isPresented: $shown, arrowEdge: .trailing) { EventDetail(event: event) }
+    }
+}
+struct EventDetail: View {
+    let event: CalEvent
+    @State private var store = Store.shared
+    @Environment(\.openURL) private var open
+    var body: some View {
+        let i = event.info
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 8) {
+                Circle().fill(event.color).frame(width: 9, height: 9).padding(.top, 6)
+                Text(event.title).font(.system(size: 16, weight: .semibold)).fixedSize(horizontal: false, vertical: true)
+            }
+            PeekRow(icon: "clock", text: span(event.start, event.end))
+            if let j = i?.join, let u = URL(string: j) {
+                Button { open(u) } label: { Label("Join meeting", systemImage: "video.fill").frame(maxWidth: .infinity) }.buttonStyle(PillButton())
+            }
+            if let l = i?.location, !l.isEmpty {
+                Button { if let u = URL(string: l), u.scheme?.hasPrefix("http") == true { open(u) } else if let u = URL(string: "https://maps.apple.com/?q=" + (l.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")) { open(u) } } label: {
+                    Label(l, systemImage: "mappin.and.ellipse").font(.callout).lineLimit(2).multilineTextAlignment(.leading)
+                }.buttonStyle(.plain).foregroundStyle(.secondary)
+            }
+            if let p = i?.people, p > 1 { PeekRow(icon: "person.2", text: "\(p) people") }
+            ForEach(i?.files ?? [], id: \.self) { f in
+                if let u = URL(string: f.url) { Button { open(u) } label: { Label(f.title, systemImage: "paperclip").font(.callout).lineLimit(1) }.buttonStyle(.plain).foregroundStyle(Color.brand) }
+            }
+            if let n = event.notes?.trimmingCharacters(in: .whitespacesAndNewlines), !n.isEmpty {
+                ScrollView { Text(LocalizedStringKey(n.replacingOccurrences(of: "<br>", with: "\n").replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)))
+                    .font(.callout).foregroundStyle(.secondary).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }.frame(maxHeight: 160)
+            }
+            Divider()
+            Dropdown("Counts toward", selection: Binding(get: { store.data.prefs.eventGoals[event.id] }, set: { store.data.prefs.eventGoals[event.id] = $0 }),
+                     options: [Opt("Nothing", UUID?.none)] + store.goals.map { Opt($0.title, UUID?.some($0.id), goalColor($0.color)) }
+                        + (store.data.areas ?? []).filter(\.active).map { Opt($0.name, UUID?.some($0.id), $0.tint) })
+            if let l = i?.link, let u = URL(string: l) { Button("Open in Google Calendar") { open(u) }.buttonStyle(QuietButton()) }
+        }.padding(16).frame(width: 300, alignment: .leading)
     }
 }

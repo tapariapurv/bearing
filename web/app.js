@@ -4,9 +4,9 @@
 import { html, render, useState, useEffect, useRef } from 'https://esm.sh/htm@3.1.1/preact/standalone'
 import * as C from './core.js'
 
-const MODES = [['Day', 'Day'], ['Week', 'Week'], ['Focus', 'Focus'], ['Projects', 'Projects'], ['Goals', 'Goals'], ['Coach', 'Coach'], ['Journal', 'Journal'], ['Insights', 'Insights']]
-const PAL = ['#38BDF8', '#EF4444', '#14B8A6', '#E5409F', '#3FAE86', '#6366F1', '#F59E0B', '#8B5CF6']
-const PALN = ['Sky', 'Coral', 'Teal', 'Pink', 'Green', 'Indigo', 'Amber', 'Violet']
+const MODES = [['Day', 'Day'], ['Week', 'Week'], ['Month', 'Month'], ['Focus', 'Focus'], ['Projects', 'Projects'], ['Goals', 'Goals'], ['Coach', 'Coach'], ['Journal', 'Journal'], ['Insights', 'Stats']]
+const PAL = ['#38BDF8', '#EF4444', '#14B8A6', '#E5409F', '#3FAE86', '#84CC16', '#F59E0B', '#64748B']
+const PALN = ['Sky', 'Coral', 'Teal', 'Pink', 'Green', 'Lime', 'Amber', 'Slate']
 const clock = d => new Date(d).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
 const dayName = d => new Date(d).toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' })
 const sameDay = (a, b) => C.dayKey(a) === C.dayKey(b)
@@ -39,14 +39,16 @@ const signOut = () => { ls('token', null); user = data = null; rerender() }
 let toastT; function toast(t) { const el = document.querySelector('.toast') || document.body.appendChild(Object.assign(document.createElement('div'), { className: 'toast' })); el.textContent = t; el.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => el.hidden = true, 3000) }
 
 // ---- Colors: same rules as the Mac app ----
-const areaTint = a => PAL[Math.abs(a.color ?? parseInt(a.id.slice(0, 2), 16)) % 8]
+const areaTint = a => a.hex || PAL[Math.abs(a.color ?? parseInt(a.id.slice(0, 2), 16)) % 8]
 const goalTint = g => PAL[Math.abs(g.color || 0) % 8]
 function tint(goalID, taskID) {
   const g = data.goals.find(x => x.id === goalID); if (g) return goalTint(g)
   const t = data.tasks.find(x => x.id === taskID), a = t && data.areas.find(x => x.id === t.areaID)
   return a ? areaTint(a) : '#A1A1AA'
 }
-const areas = () => data.areas.filter(a => !a.archived)
+const areas = () => data.areas.filter(a => !a.archived && !a.done)
+const aicon = a => a ? a.icon || (a.isClass ? '◆' : '■') : '○'
+let jump = null
 const editArea = (id, f) => save(d => f(d.areas.find(a => a.id === id)))
 
 // ---- AI: Claude through /api/ai, with the same context and memory the Mac app uses ----
@@ -128,7 +130,7 @@ function App() {
   if (!user) return html`<div class="login"><div><img src="icon.png" alt=""/><h1>Bearing</h1><p class="sub">Plan, focus and reflect with an AI coach. Synced with the Mac and iPhone apps.</p>
     <p class="sub" style="margin-top:16px">To sign in, open Bearing on your Mac and choose<br/><b>Settings › Agents › Open Bearing on the Web</b>.</p></div></div>`
   if (!data || data.error) return html`<div class="login"><div><h1>${data?.error ? 'Can\'t open your data' : 'Loading…'}</h1><p class="sub">${data?.error || ''}</p>${data?.error && html`<button onClick=${signOut}>Sign out</button>`}</div></div>`
-  const P = { Day, Week, Focus, Projects, Goals, Coach, Journal, Insights, Settings }[page] || Day
+  const P = { Day, Week, Month, Focus, Projects, Goals, Coach, Journal, Insights, Settings }[page] || Day
   const k = C.dayKey(), due = data.tasks.filter(t => !t.done && t.due && C.dayKey(t.due) <= k).length
   return html`<div class="top"><div class="logo"><img src="icon.png" alt=""/>Bearing</div>
     <nav class="modes">${MODES.map(([id, l]) => html`<a href=${'#' + id} class=${id === page ? 'on' : ''}>${l}</a>`)}</nav>
@@ -138,7 +140,7 @@ function App() {
 
 // ---- Day: tasks panel, Planned/Actual calendar, day panel ----
 function Day() {
-  const [day, setDay] = useState(new Date()), [plan, setPlan] = useState(null)
+  const [day, setDay] = useState(() => { const j = jump || new Date(); jump = null; return j }), [plan, setPlan] = useState(null)
   return html`<div class="day"><${TasksPanel}/><${Calendar} day=${day} setDay=${setDay} onPlan=${() => setPlan({})}/><${DayPanel} day=${day} onPlan=${() => setPlan({})}/>
     ${plan && html`<${PlanModal} close=${() => setPlan(null)}/>`}</div>`
 }
@@ -147,9 +149,9 @@ function TasksPanel() {
   const open = t => done || !t.done
   const list = [...areas().map(a => ({ a, c: areaTint(a), tasks: data.tasks.filter(t => t.areaID === a.id && open(t)) })),
     { a: null, c: '#A1A1AA', tasks: data.tasks.filter(t => open(t) && !areas().some(a => a.id === t.areaID)) }]
-  return html`<div class="panel"><div class="ptitle"><span class="grow">All tasks</span><label class="small mute row" style="gap:6px"><input type="checkbox" checked=${done} onChange=${() => setDone(!done)}/>Done</label></div>
+  return html`<div class="panel"><div class="ptitle"><span class="grow">All tasks</span><label class="small mute row" style="gap:6px"><input type="checkbox" class="switch" checked=${done} onChange=${() => setDone(!done)}/>Done</label></div>
     ${list.map(({ a, c, tasks }) => html`<div class="group" style="--c:${c}">
-      <div class="ghead"><span class="gicon">${a ? (a.isClass ? '◆' : '■') : '○'}</span>${a?.name || 'Unsorted'}</div>
+      <div class="ghead"><span class="gicon">${aicon(a)}</span>${a?.name || 'Unsorted'}</div>
       ${tasks.filter(t => !t.sub).map(t => html`<${TaskRow} t=${t} key=${t.id}/>`)}
       <${AddRow} areaID=${a?.id}/>
       ${(a?.subs || []).map(s => html`<div class="ghead" style="padding-left:24px;font-size:15px"><span class="gicon" style="width:28px;height:28px">▪</span>${s}</div>
@@ -244,31 +246,54 @@ function Week() {
       ${data.tasks.filter(t => !t.done && t.due && sameDay(t.due, d)).map(t => html`<div class="small" style="padding:4px 0">○ ${t.title}</div>`)}</div>`)}</div></div>`
 }
 
-// ---- Projects: classes, projects, sub-projects, colors ----
+// ---- Projects: Priority · Active · Done, compact rows ----
+const EMOJI = '📚 📐 🧪 🔬 🧬 💻 🖥️ 🤖 🧠 📊 📈 💹 💰 🏦 📝 ✍️ 📖 🔤 🗣️ 🌍 🎨 🎬 🎥 📷 🎵 🎸 🎹 ♟️ ⚽ 🏀 🏏 🎾 🏓 🛹 🏃 🧘 💪 🍳 🌱 🛠️ 🔧 ⚙️ 🚀 ✈️ 🏠 🛒 📦 🏷️ 💼 📣 💡 🔥 ⭐ 🎯 🏆 ❤️ 🙏 🕉️ 🧩 🎮 📱 🌐 🔒 📅 ✅'.split(' ')
 function Projects() {
-  const [q, setQ] = useState(''), [arch, setArch] = useState(false), [nw, setNw] = useState({})
-  const list = data.areas.filter(a => (arch || !a.archived) && (!q || a.name.toLowerCase().includes(q.toLowerCase()) || (a.subs || []).some(s => s.toLowerCase().includes(q.toLowerCase()))))
+  const [arch, setArch] = useState(false), [nw, setNw] = useState(''), [open, setOpen] = useState(null), [style, setStyle] = useState(null)
   const add = isClass => save(d => d.areas.push({ id: C.uuid(), name: isClass ? 'New class' : 'New project', isClass, color: d.areas.length % 8 }))
-  const move = (id, by) => save(d => { const i = d.areas.findIndex(a => a.id === id), j = i + by; if (j >= 0 && j < d.areas.length) [d.areas[i], d.areas[j]] = [d.areas[j], d.areas[i]] })
-  const del = a => confirm(`Delete ${a.name}? Its tasks stay, unsorted.`) && save(d => { d.areas = d.areas.filter(x => x.id !== a.id); for (const t of d.tasks) if (t.areaID === a.id) { delete t.areaID; delete t.sub } })
-  return html`<div class="page"><h1>Classes and projects</h1><p class="sub">Group tasks, give each a color, and link it to a goal.</p>
-    <div class="row wrap" style="margin:22px 0"><input style="max-width:280px" placeholder="Filter" value=${q} onInput=${e => setQ(e.target.value)}/>
-      <label class="row small mute" style="gap:6px"><input type="checkbox" checked=${arch} onChange=${() => setArch(!arch)}/>Show archived</label><span class="grow"/>
+  const rename = (a, v) => v.trim() && v.trim() !== a.name && save(d => { const x = d.areas.find(y => y.id === a.id); x.name = v.trim(); C.relabel(d, x) })
+  const kind = (a, c) => save(d => { const x = d.areas.find(y => y.id === a.id); x.isClass = c; C.relabel(d, x) })
+  const del = a => confirm(`Delete ${a.name}? Its tasks stay, unsorted.`) && save(d => { d.areas = d.areas.filter(x => x.id !== a.id); for (const t of d.tasks) if (t.areaID === a.id) { delete t.areaID; delete t.sub; C.updateTask(d, t, { areaID: null }) } })
+  const set = (a, k) => editArea(a.id, x => { for (const f of ['priority', 'done', 'archived']) delete x[f]; if (k) x[k] = true })
+  const S = [['Priority', a => a.priority && !a.done && !a.archived], ['Active', a => !a.priority && !a.done && !a.archived], ['Done', a => a.done && !a.archived], ...(arch ? [['Archived', a => a.archived]] : [])]
+  const row = a => { const c = areaTint(a), ts = data.tasks.filter(t => t.areaID === a.id), n = ts.filter(t => !t.done).length
+    return html`<div class="prow" style=${`--c:${c}`} key=${a.id}><div class="row">
+      <button class="gicon" title="Icon and color" onClick=${() => setStyle(a.id)}>${aicon(a)}</button>
+      <input class="plain grow" style="font-weight:600" value=${a.name} onChange=${e => rename(a, e.target.value)} onKeyDown=${e => e.key === 'Enter' && e.target.blur()}/>
+      <span class="small mute nowrap">${n} open</span>
+      <div class="seg small"><button class=${a.isClass ? 'on' : ''} onClick=${() => kind(a, true)}>Class</button><button class=${a.isClass ? '' : 'on'} onClick=${() => kind(a, false)}>Project</button></div>
+      <select class="small" style="width:170px" value=${a.goal || ''} onChange=${e => editArea(a.id, x => e.target.value ? x.goal = e.target.value : delete x.goal)}><option value="">No goal</option>${C.goals(data).map(g => html`<option value=${g.id}>${g.title}</option>`)}</select>
+      <button class="ghost" title="Sub-projects" aria-expanded=${open === a.id} onClick=${() => setOpen(open === a.id ? null : a.id)}>${open === a.id ? '▾' : '▸'} ${(a.subs || []).length || ''}</button>
+      <select class="ghost menu" aria-label="More" value="" onChange=${e => { const v = e.target.value; e.target.value = ''; v === 'del' ? del(a) : set(a, v === 'active' ? null : v) }}>
+        <option value="">⋯</option>${!a.priority && html`<option value="priority">Mark priority</option>`}${(a.priority || a.done || a.archived) && html`<option value="active">Make active</option>`}
+        ${!a.done && html`<option value="done">Mark done</option>`}${!a.archived && html`<option value="archived">Archive</option>`}<option value="del">Delete…</option></select></div>
+      ${open === a.id && html`<div class="row wrap" style="gap:8px;padding:10px 0 4px 46px">${(a.subs || []).map(s => html`<span class="chip">${s} <span style="opacity:.6">${ts.filter(t => t.sub === s && !t.done).length}</span><button aria-label="Remove" onClick=${() => save(d => { const x = d.areas.find(y => y.id === a.id); x.subs = x.subs.filter(y => y !== s); for (const t of d.tasks) if (t.areaID === a.id && t.sub === s) C.updateTask(d, t, { sub: null }) })}>✕</button></span>`)}
+        <form onSubmit=${e => { e.preventDefault(); const s = nw.trim(); if (s && !(a.subs || []).includes(s)) editArea(a.id, x => x.subs = [...(x.subs || []), s]); setNw('') }}><input class="plain small" style="width:160px" placeholder="+ Add sub-project" value=${nw} onInput=${e => setNw(e.target.value)}/></form></div>`}</div>` }
+  const sa = style && data.areas.find(a => a.id === style)
+  return html`<div class="page"><div class="row wrap" style="margin-bottom:22px"><div class="grow"><h1>Classes and projects</h1><p class="sub">Group tasks, give each an icon and color, and link it to a goal.</p></div>
+      <label class="row small mute" style="gap:6px"><input type="checkbox" class="switch" checked=${arch} onChange=${() => setArch(!arch)}/>Archived</label>
       <button onClick=${() => add(true)}>New class</button><button class="primary" onClick=${() => add(false)}>New project</button></div>
-    ${!list.length && html`<div class="card mute">${data.areas.length ? 'Nothing matches.' : 'No classes or projects yet.'}</div>`}
-    ${list.map(a => { const c = areaTint(a), ts = data.tasks.filter(t => t.areaID === a.id), open = ts.filter(t => !t.done).length
-      return html`<div class="card accent" style=${`--c:${c};opacity:${a.archived ? .55 : 1}`} key=${a.id}>
-        <div class="row"><span class="gicon">${a.isClass ? '◆' : '■'}</span><input class="plain" style="font-size:18px;font-weight:700" value=${a.name} onChange=${e => editArea(a.id, x => x.name = e.target.value)}/>
-          <span class="small mute" style="white-space:nowrap">${open} open · ${ts.length - open} done</span>
-          <button class="ghost" title="Move up" onClick=${() => move(a.id, -1)}>↑</button><button class="ghost" title="Move down" onClick=${() => move(a.id, 1)}>↓</button>
-          <button class="ghost" onClick=${() => editArea(a.id, x => x.archived ? delete x.archived : x.archived = true)}>${a.archived ? 'Unarchive' : 'Archive'}</button><button class="ghost" onClick=${() => del(a)}>Delete</button></div>
-        <div class="row wrap" style="margin:16px 0;gap:18px"><div class="row" style="gap:8px">${PAL.map((p, i) => html`<button class=${'sw' + ((a.color ?? parseInt(a.id.slice(0, 2), 16)) % 8 === i ? ' on' : '')} style=${`--c:${p}`} title=${PALN[i]} onClick=${() => editArea(a.id, x => x.color = i)}/>`)}</div>
-          <div class="seg"><button class=${a.isClass ? 'on' : ''} onClick=${() => editArea(a.id, x => x.isClass = true)}>Class</button><button class=${a.isClass ? '' : 'on'} onClick=${() => editArea(a.id, x => x.isClass = false)}>Project</button></div>
-          <select style="width:200px" value=${a.goal || ''} onChange=${e => editArea(a.id, x => e.target.value ? x.goal = e.target.value : delete x.goal)}><option value="">No goal</option>${C.goals(data).map(g => html`<option value=${g.id}>${g.title}</option>`)}</select></div>
-        <div class="small mute" style="margin-bottom:8px">Sub-projects</div>
-        <div class="row wrap" style="gap:8px">${(a.subs || []).map(s => html`<span class="chip">${s} <span style="opacity:.6">${ts.filter(t => t.sub === s && !t.done).length}</span><button aria-label="Remove" onClick=${() => save(d => { const x = d.areas.find(y => y.id === a.id); x.subs = x.subs.filter(y => y !== s); for (const t of d.tasks) if (t.areaID === a.id && t.sub === s) delete t.sub })}>✕</button></span>`)}
-          <form onSubmit=${e => { e.preventDefault(); const s = (nw[a.id] || '').trim(); if (s && !(a.subs || []).includes(s)) editArea(a.id, x => x.subs = [...(x.subs || []), s]); setNw({ ...nw, [a.id]: '' }) }}>
-            <input class="plain small" style="width:150px" placeholder="+ Add sub-project" value=${nw[a.id] || ''} onInput=${e => setNw({ ...nw, [a.id]: e.target.value })}/></form></div></div>` })}</div>`
+    ${S.map(([l, f]) => { const xs = data.areas.filter(f); return xs.length > 0 && html`<h2>${l}</h2><div class="card list">${xs.map(row)}</div>` })}
+    ${!data.areas.length && html`<div class="card mute">No classes or projects yet.</div>`}
+    ${sa && html`<div class="modal" onClick=${e => e.target === e.currentTarget && setStyle(null)}><div><div class="row"><h1 class="grow" style="font-size:22px">${sa.name}</h1><button onClick=${() => setStyle(null)}>Done</button></div>
+      <h2>Color</h2><div class="row wrap" style="gap:8px">${PAL.map((p, i) => html`<button class=${'sw' + (!sa.hex && (sa.color ?? parseInt(sa.id.slice(0, 2), 16)) % 8 === i ? ' on' : '')} style=${`--c:${p}`} title=${PALN[i]} onClick=${() => editArea(sa.id, x => { x.color = i; delete x.hex })}/>`)}
+        <input type="color" value=${areaTint(sa)} onInput=${e => editArea(sa.id, x => x.hex = e.target.value.toUpperCase())} style="width:44px;height:30px;padding:2px"/>
+        <input style="width:110px" value=${sa.hex || ''} placeholder="#3FAE86" onChange=${e => /^#?[0-9a-f]{6}$/i.test(e.target.value.trim()) && editArea(sa.id, x => x.hex = ('#' + e.target.value.trim().replace('#', '')).toUpperCase())}/></div>
+      <h2>Icon</h2><div class="emoji"><button onClick=${() => editArea(sa.id, x => delete x.icon)}>None</button>${EMOJI.map(e => html`<button class=${sa.icon === e ? 'on' : ''} onClick=${() => editArea(sa.id, x => x.icon = e)}>${e}</button>`)}</div>
+      <input style="margin-top:12px" placeholder="Or type any emoji" maxlength="4" onChange=${e => e.target.value.trim() && editArea(sa.id, x => x.icon = e.target.value.trim())}/></div></div>`}</div>`
+}
+
+// ---- Month ----
+function Month() {
+  const [m, setM] = useState(() => { const d = new Date(); d.setDate(1); return d })
+  const first = addDays(m, -((m.getDay() + 6) % 7)), days = [...Array(42)].map((_, i) => addDays(first, i))
+  const go = d => { jump = d; location.hash = 'Day' }
+  return html`<div class="page" style="max-width:1400px"><div class="row wrap" style="margin-bottom:18px"><h1 class="grow">${m.toLocaleDateString([], { month: 'long', year: 'numeric' })}</h1>
+    <button class="ghost" aria-label="Previous month" onClick=${() => setM(new Date(m.getFullYear(), m.getMonth() - 1, 1))}>‹</button><button onClick=${() => { const d = new Date(); d.setDate(1); setM(d) }}>This month</button><button class="ghost" aria-label="Next month" onClick=${() => setM(new Date(m.getFullYear(), m.getMonth() + 1, 1))}>›</button></div>
+    <div class="month">${['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => html`<div class="small mute" style="padding:0 8px">${d}</div>`)}
+      ${days.map(d => { const bs = data.blocks.filter(b => sameDay(b.start, d)).sort((a, b) => a.start < b.start ? -1 : 1), ts = data.tasks.filter(t => !t.done && t.due && sameDay(t.due, d)), all = [...bs, ...ts]
+        return html`<button class=${'mday' + (d.getMonth() !== m.getMonth() ? ' out' : '') + (sameDay(d, new Date()) ? ' today' : '')} onClick=${() => go(d)}><span class="mnum">${d.getDate()}</span>
+          ${all.slice(0, 3).map(x => html`<div class="mitem" style=${`--c:${x.start ? tint(x.goalID, x.taskID) : tint(x.goalID, x.id)}`}>${x.start ? '' : '○ '}${x.title}</div>`)}${all.length > 3 && html`<div class="small mute">+${all.length - 3} more</div>`}</button>` })}</div></div>`
 }
 
 // ---- Goals ----
@@ -342,10 +367,17 @@ function Journal() {
     <h2>Recent</h2>${data.journal.filter(j => j.text).sort((a, b) => a.id < b.id ? 1 : -1).slice(0, 10).map(j => html`<div class="card" style="cursor:pointer" onClick=${() => setK(j.id)}><b>${dayName(C.parseDay(j.id))}</b><p class="sub small" style="margin-top:4px">${j.text.slice(0, 200)}</p></div>`)}</div>`
 }
 function Insights() {
-  const wk = addDays(new Date(), -7), ss = data.sessions.filter(s => new Date(s.start) >= wk), hrs = ss.reduce((a, s) => a + s.seconds, 0) / 3600
-  return html`<div class="page"><h1>Insights</h1><p class="sub">The last 7 days.</p><div class="stats" style="margin-top:22px">
-    ${[['Focused', hrs.toFixed(1) + ' h'], ['Sessions', ss.length], ['Avg quality', ss.length ? Math.round(ss.reduce((a, s) => a + C.quality(s), 0) / ss.length) + '%' : '–'], ['Tasks done', data.tasks.filter(t => t.done).length]].map(([l, v]) => html`<div class="card stat"><div class="small mute">${l}</div><div class="v">${v}</div></div>`)}</div>
-    <h2>Hours by goal</h2><div class="card">${C.goals(data).map(g => { const h = C.focused(data, g.id, wk) / 3600; return html`<div style=${`--c:${goalTint(g)};padding:6px 0`}><div class="row"><span class="grow">${g.title}</span><span class="small mute">${h.toFixed(1)} / ${g.weeklyHours || 0} h</span></div><div class="bar" style="margin:8px 0"><i style=${`width:${Math.min(100, h / (g.weeklyHours || 1) * 100)}%`}/></div></div>` })}</div></div>`
+  const [span, setSpan] = useState(7), since = addDays(new Date(), -span), k = C.dayKey()
+  const ss = data.sessions.filter(s => new Date(s.start) >= since), dn = data.tasks.filter(t => t.done && t.doneAt && new Date(t.doneAt) >= since)
+  const days = [...Array(Math.min(span, 31))].map((_, i) => addDays(new Date(), i - Math.min(span, 31) + 1)), fx = d => ss.filter(s => sameDay(s.start, d)).reduce((a, s) => a + s.seconds, 0)
+  const mx = Math.max(1, ...days.map(fx)), sec = id => ss.filter(s => data.tasks.find(t => t.id === s.taskID)?.areaID === id).reduce((a, s) => a + s.seconds, 0)
+  return html`<div class="page"><div class="row wrap"><div class="grow"><h1>Stats</h1><p class="sub">Focus, tasks, classes and goals.</p></div>
+    <div class="seg">${[[7, 'Week'], [30, 'Month'], [90, 'Season']].map(([n, l]) => html`<button class=${span === n ? 'on' : ''} onClick=${() => setSpan(n)}>${l}</button>`)}</div></div>
+    <div class="stats" style="margin-top:22px">${[['Focused', dur(ss.reduce((a, s) => a + s.seconds, 0))], ['Tasks done', dn.length], ['Overdue', data.tasks.filter(t => !t.done && t.due && C.dayKey(t.due) < k).length], ['Focus days', new Set(ss.map(s => C.dayKey(s.start))).size]].map(([l, v]) => html`<div class="card stat"><div class="small mute">${l}</div><div class="v">${v}</div></div>`)}</div>
+    <h2>Each day</h2><div class="card"><div class="chart">${days.map(d => html`<div title=${`${dayName(d)}: ${dur(fx(d))}, ${dn.filter(t => sameDay(t.doneAt, d)).length} tasks`}><i style=${`height:${fx(d) / mx * 100}%`}/>${span <= 7 && html`<span class="small mute">${d.toLocaleDateString([], { weekday: 'narrow' })}</span>`}</div>`)}</div></div>
+    <h2>Classes and projects</h2><div class="card list">${areas().map(a => { const ts = data.tasks.filter(t => t.areaID === a.id)
+      return html`<div class="prow row" style=${`--c:${areaTint(a)}`}><span class="gicon">${aicon(a)}</span><span class="grow">${a.name}</span><span class="small mute">${dn.filter(t => t.areaID === a.id).length} done · ${ts.filter(t => !t.done).length} open · ${dur(sec(a.id))}</span></div>` })}</div>
+    <h2>Goals</h2><div class="card">${C.goals(data).map(g => { const h = C.focused(data, g.id, since) / 3600, tgt = (g.weeklyHours || 0) * span / 7; return html`<div style=${`--c:${goalTint(g)};padding:6px 0`}><div class="row"><span class="grow">${g.title}</span><span class="small mute">${h.toFixed(1)} / ${tgt.toFixed(0)} h</span></div><div class="bar" style="margin:8px 0"><i style=${`width:${Math.min(100, h / (tgt || 1) * 100)}%`}/></div></div>` })}</div></div>`
 }
 function Settings() {
   const p = data.prefs, set = (k, v) => save(d => { d.prefs[k] = v }), [n, setN] = useState(ls('notify') !== false && globalThis.Notification?.permission === 'granted')

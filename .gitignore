@@ -3,3 +3,4 @@ build/
 google-client.local
 iOS/Bearing.xcodeproj/
 web/.vercel
+graphify-out/

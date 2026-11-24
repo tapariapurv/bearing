@@ -165,7 +165,17 @@ func applyTodoist(_ r: TDResponse, to d: inout AppData) -> String? {
 
 // MARK: - Calendar (every account already added to macOS)
 
-struct CalEvent: Identifiable, Hashable { var id: String, title: String, start: Date, end: Date, allDay: Bool, color: Color, notes: String? = nil }
+struct CalEvent: Identifiable, Hashable { var id: String, title: String, start: Date, end: Date, allDay: Bool, color: Color, notes: String? = nil, info: EventInfo? = nil }
+/// What an event's detail popover shows beyond its time.
+struct EventInfo: Hashable {
+    struct File: Hashable { var title: String, url: String }
+    var location: String?, join: String?, link: String?, files: [File] = [], people: Int?
+    /// A video link from the join field, else the first meeting link in the location or notes.
+    static func meeting(in text: String?) -> String? {
+        guard let t = text, let r = t.range(of: #"https://[^\s"<>]*(zoom\.us|meet\.google|teams\.microsoft|webex|whereby)[^\s"<>]*"#, options: .regularExpression) else { return nil }
+        return String(t[r])
+    }
+}
 
 @Observable @MainActor final class CalendarService {
     static let shared = CalendarService()
@@ -196,14 +206,15 @@ struct CalEvent: Identifiable, Hashable { var id: String, title: String, start: 
         if granted {
             let k = from...max(from, to)
             let local = ekCache[k] ?? ek.events(matching: ek.predicateForEvents(withStart: from, end: to, calendars: nil)).map {
-                CalEvent(id: $0.eventIdentifier ?? UUID().uuidString, title: $0.title ?? "Busy", start: $0.startDate, end: $0.endDate, allDay: $0.isAllDay, color: Color(cgColor: $0.calendar.cgColor), notes: $0.notes)
+                CalEvent(id: $0.eventIdentifier ?? UUID().uuidString, title: $0.title ?? "Busy", start: $0.startDate, end: $0.endDate, allDay: $0.isAllDay, color: Color(cgColor: $0.calendar.cgColor), notes: $0.notes,
+                         info: EventInfo(location: $0.location, join: EventInfo.meeting(in: ($0.location ?? "") + " " + ($0.notes ?? "")) ?? $0.url?.absoluteString, link: nil, people: $0.attendees?.count))
             }
             ekCache[k] = local; local.forEach(add)
         }
         let g = GoogleCalendar.shared
         let colors = Dictionary(g.calendars.map { ($0.id, $0.color) }, uniquingKeysWith: { a, _ in a })
         for e in g.events where e.start < to && e.end > from {
-            add(CalEvent(id: e.key, title: e.title, start: e.start, end: e.end, allDay: e.allDay, color: colors[e.cal] ?? .brand, notes: e.notes))
+            add(CalEvent(id: e.key, title: e.title, start: e.start, end: e.end, allDay: e.allDay, color: colors[e.cal] ?? .brand, notes: e.notes, info: e.info))
         }
         return out
     }
@@ -363,18 +374,36 @@ struct Extracted: Decodable {
 struct AIActions: Decodable {
     struct Note: Decodable { var title: String; var body: String }
     var changes: [PlanChange]?; var tasks: [Extracted.T]?; var notes: [Note]?
+    var raw: String?   // the JSON, for "tools" calls whose args are free-form
+    enum CodingKeys: CodingKey { case changes, tasks, notes }
+    var tools: [(name: String, args: [String: Any])] {
+        guard let r = raw, let a = r.firstIndex(of: "{"), let b = r.lastIndex(of: "}"), a < b,
+              let o = try? JSONSerialization.jsonObject(with: Data(r[a...b].utf8)) as? [String: Any] else { return [] }
+        return (o["tools"] as? [[String: Any]] ?? []).compactMap { t in (t["name"] as? String).map { ($0, t["args"] as? [String: Any] ?? [:]) } }
+    }
     var lines: [String] {
         (changes ?? []).map { "\($0.action.capitalized) \($0.title)\($0.day.map { " · \($0)" } ?? "")\($0.start.map { " \($0)" } ?? "")" }
             + (tasks ?? []).map { "New task: \($0.title)" } + (notes ?? []).map { "New note: \($0.title)" }
+            + tools.map { t in "\(t.name.replacingOccurrences(of: "_", with: " ").capitalized): " + t.args.sorted { $0.key < $1.key }.map { "\($0.key) \($0.value)" }.joined(separator: ", ") }
     }
 }
 
 @MainActor enum Coach {
-    static let actionGuide = """
+    static var toolGuide: String {
+        #if os(macOS)
+        Agents.shared.coachGuide
+        #else
+        ""
+        #endif
+    }
+    static var actionGuide: String { """
     You can act on the person's schedule. Only when they ask you to change, plan, reschedule, add or create something, end your reply with one block:
     <actions>{"changes":[{"action":"add|move|remove","title":"...","goal":"exact goal title or null","blockId":"id for move/remove","day":"yyyy-MM-dd","start":"HH:mm","minutes":60}],"tasks":[{"title":"...","goal":"..."}],"notes":[{"title":"...","body":"markdown"}]}</actions>
-    "tasks" are to-do items; "changes" are calendar blocks; "notes" are documents. Use only what was asked for. Use null, not "null". Omit empty keys. Start times on the hour. Never overlap events. Keep the prose before it to one or two sentences; they will review and apply it.
-    """
+    "tasks" are to-do items; "changes" are calendar blocks; "notes" are documents. Use only what was asked for.
+    For anything else (edit, complete or delete tasks; rename, recolor, re-icon, link, finish or archive classes and projects; edit goals; journal), add "tools":[{"name":"tool","args":{...}}] using these tools. Task ids are in brackets in Open tasks.
+    \(toolGuide)
+    Use null, not "null". Omit empty keys. Start times on the hour. Never overlap events. Keep the prose before it to one or two sentences; they will review and apply it.
+    """ }
     static let memoryGuide = """
     Memory: when you learn something lasting about me (a preference, constraint, routine, recurring struggle, deadline, what works for me),     add it on its own line as <remember>one short fact</remember>. Skip anything already in Memory. Most replies need none.
     """
@@ -392,18 +421,23 @@ struct AIActions: Decodable {
         let text = text.replacingOccurrences(of: "<remember>[^<]*(</remember>)?", with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
         guard let a = text.range(of: "<actions>") else {
             // Small local models often skip the tags and send bare JSON.
-            guard let i = text.firstIndex(of: "{"), let x = extractJSON(AIActions.self, from: String(text[i...])), !x.lines.isEmpty else { return (text, nil) }
+            guard let i = text.firstIndex(of: "{"), var x = extractJSON(AIActions.self, from: String(text[i...])) else { return (text, nil) }
+            x.raw = String(text[i...]); guard !x.lines.isEmpty else { return (text, nil) }
             return (text[..<i].replacingOccurrences(of: "```json", with: "").replacingOccurrences(of: "```", with: "").trimmingCharacters(in: .whitespacesAndNewlines), x)
         }
         let rest = text[a.upperBound...], b = rest.range(of: "</actions>")
         let json = String(b.map { rest[..<$0.lowerBound] } ?? rest)
-        return (String(text[..<a.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines), b == nil ? nil : extractJSON(AIActions.self, from: json))
+        var x = b == nil ? nil : extractJSON(AIActions.self, from: json); x?.raw = json
+        return (String(text[..<a.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines), x)
     }
     static func perform(_ x: AIActions) {
         let s = Store.shared
         apply(x.changes ?? [])
         for t in x.tasks ?? [] { s.addTask(t.title, goal: s.goals.first { $0.title == t.goal }?.id) }
         for n in x.notes ?? [] { s.data.captures.insert(Capture(title: n.title, source: "AI", text: n.body), at: 0) }
+        #if os(macOS)
+        for t in x.tools { _ = Agents.shared.coachRun(t.name, t.args) }
+        #endif
     }
     /// Reads mail, calendar notes and meeting notes new since the last scan and adds the person's action items as tasks.
     /// One compact call with no coach context, to keep tokens low. Returns how many tasks were added.
@@ -425,7 +459,7 @@ struct AIActions: Decodable {
             throw AIError(errorDescription: "Nothing to read yet. Connect Google or a meeting-notes app in Settings › Accounts.")
         }
         guard !src.isEmpty else { s.data.prefs.lastScan = now; return [] }
-        let areas = (s.data.areas ?? []).filter { $0.archived != true }
+        let areas = (s.data.areas ?? []).filter(\.active)
         let p = """
         List action items the person must do themselves. Skip FYIs, newsletters, receipts, things others own, and anything in EXISTING. \
         Reply with JSON only: {"tasks":[{"title":"verb first, under 10 words","goal":"exact goal title or null","area":"exact class or project name or null","due":"yyyy-MM-dd or null"}]}. \
@@ -469,9 +503,17 @@ struct AIActions: Decodable {
         if let qa = d.about, !qa.isEmpty { o += "My recent answers to your questions:\n"; for x in qa { o += "- \(x.q) \(x.a)\n" } }
         o += loopContext
         o += accountContext
+        let ar = d.areas ?? []
+        if !ar.isEmpty {
+            o += "Classes and projects (name | kind | status | goal | sub-projects | open tasks):\n"
+            for a in ar {
+                let st = a.archived == true ? "archived" : a.done == true ? "done" : a.priority == true ? "priority" : "active"
+                o += "- \(a.name) | \(a.isClass ? "class" : "project") | \(st) | \(s.goal(a.goal)?.title ?? "none") | \((a.subs ?? []).joined(separator: ", ")) | \(d.tasks.filter { $0.areaID == a.id && !$0.done }.count)\n"
+            }
+        }
         o += "Open tasks:\n"
         for t in d.tasks.filter({ !$0.done }).sorted(by: { $0.priority > $1.priority }).prefix(40) {
-            o += "- \(t.title)\(s.goal(t.goalID).map { " [goal: \($0.title)]" } ?? "")\(d.labels(for: t).map { " #\($0)" }.joined())\(t.due.map { " due \($0.dayKey)" } ?? "")\n"
+            o += "- [\(t.id.uuidString)] \(t.title)\(s.goal(t.goalID).map { " [goal: \($0.title)]" } ?? "")\(d.labels(for: t).map { " #\($0)" }.joined())\(t.due.map { " due \($0.dayKey)" } ?? "")\n"
         }
         o += "Blocks this week (id | start | minutes | title):\n"
         let st = now.startOfWeek, en = st.adding(days: 7)
@@ -493,7 +535,10 @@ struct AIActions: Decodable {
         if !c.isEmpty { o += "Recent notes and brain dumps:\n"; for e in c { o += "\(e.date.dayKey) \(e.title): \(e.text.prefix(800))\n" } }
         return o
     }
-    static var system: String { persona + "\n\n" + context }
+    static var system: String {
+        let n = Store.shared.data.prefs.coachNotes?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return persona + (n.isEmpty ? "" : "\n\nThe person's instructions for you (follow them):\n" + n) + "\n\n" + context
+    }
     /// Picks the single best thing to focus on right now.
     static func suggestFocus() async throws -> Extracted.T {
         let p = "It's \(Date().formatted(date: .omitted, time: .shortened)). What one thing should I focus on right now? Weigh deadlines, my current block, and my core goals. Reply with JSON only: {\"title\":\"verb first, under 8 words\",\"goal\":\"exact goal title or null\"}"

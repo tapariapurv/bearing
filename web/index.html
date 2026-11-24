@@ -5,15 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Bearing</title>
 <meta name="description" content="Bearing on the web: plan your day, focus, and reflect with an AI coach, synced with the Mac and iPhone apps.">
-<meta name="theme-color" content="#F2F2F6" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#0E0E12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F3F6F4" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0C0F0E" media="(prefers-color-scheme: dark)">
 <link rel="icon" href="icon.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="manifest" href="manifest.json">
 <style>
-:root { --bg:#F2F2F6; --card:#fff; --ink:#18181B; --mute:#71717A; --faint:#A1A1AA; --line:#E9E9EE; --hover:rgba(0,0,0,.04); --brand:#4F46E5; --now:#E5484D;
+:root { --bg:#F3F6F4; --card:#fff; --ink:#18181B; --mute:#71717A; --faint:#A1A1AA; --line:#E9E9EE; --hover:rgba(0,0,0,.04); --brand:#2E9E74; --soft:#E3F2EC; --now:#E5484D;
   --r:22px; --ease:cubic-bezier(.23,1,.32,1); color-scheme:light dark }
-@media (prefers-color-scheme: dark) { :root { --bg:#0E0E12; --card:#18181D; --ink:#F4F4F5; --mute:#A1A1AA; --faint:#6B6B75; --line:#2A2A31; --hover:rgba(255,255,255,.05); --brand:#8B93FF } }
+@media (prefers-color-scheme: dark) { :root { --bg:#0C0F0E; --card:#18181D; --ink:#F4F4F5; --mute:#A1A1AA; --faint:#6B6B75; --line:#2A2A31; --hover:rgba(255,255,255,.05); --brand:#5FD3A5; --soft:#1A3329 } }
 * { box-sizing:border-box } html, body { margin:0; height:100% }
 body { font:15px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, system-ui, sans-serif; background:var(--bg); color:var(--ink); -webkit-font-smoothing:antialiased }
 button, input, select, textarea { font:inherit; color:inherit }
@@ -88,6 +88,18 @@ h1 { font-size:30px; letter-spacing:-.02em; margin:0 0 6px } h2 { font-size:13px
 .login { min-height:100vh; display:grid; place-items:center; text-align:center; padding:24px } .login img { width:96px; border-radius:22px }
 .toast { position:fixed; bottom:24px; left:50%; transform:translateX(-50%); background:var(--ink); color:var(--card); padding:10px 18px; border-radius:999px; z-index:20; font-weight:500 }
 code { font-size:12px; word-break:break-all; background:var(--hover); padding:2px 6px; border-radius:6px }
+.card.list { padding:6px 18px } .prow { padding:10px 0; border-bottom:1px solid var(--line) } .prow:last-child { border:0 } .prow .row { gap:10px } .nowrap { white-space:nowrap }
+button.gicon { padding:0; font-size:17px } select.menu { width:auto; background:none; padding:6px 8px; color:var(--mute); cursor:pointer }
+.emoji { display:grid; grid-template-columns:repeat(auto-fill, minmax(40px,1fr)); gap:4px } .emoji button { padding:6px 0; background:none; font-size:20px; border-radius:10px } .emoji button.on, .emoji button:hover { background:var(--soft) } .emoji button:first-child { font-size:12px }
+.month { display:grid; grid-template-columns:repeat(7, minmax(0,1fr)); gap:8px } .mday { display:flex; flex-direction:column; align-items:stretch; gap:3px; text-align:left; background:var(--card); border-radius:14px; padding:8px; min-height:112px; font-weight:400; overflow:hidden }
+.mday.out { opacity:.45 } .mday.today .mnum { background:var(--now); color:#fff } .mnum { align-self:flex-start; min-width:24px; height:24px; border-radius:999px; display:grid; place-items:center; font-weight:600; font-size:13px; padding:0 4px }
+.mitem { font-size:12px; padding:2px 6px; border-radius:6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; background:color-mix(in srgb, var(--c) 16%, transparent); color:color-mix(in srgb, var(--c) 55%, var(--ink)) }
+input[type=checkbox].switch, .field input[type=checkbox] { appearance:none; width:38px; height:22px; border-radius:999px; background:color-mix(in srgb, var(--ink) 16%, transparent); position:relative; padding:0; border:0; cursor:pointer; transition:background .2s var(--ease); flex:none }
+input[type=checkbox].switch::after, .field input[type=checkbox]::after { content:''; position:absolute; top:2px; left:2px; width:18px; height:18px; border-radius:50%; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.25); transition:transform .2s var(--ease) }
+input[type=checkbox].switch:checked, .field input[type=checkbox]:checked { background:var(--brand) } input[type=checkbox].switch:checked::after, .field input[type=checkbox]:checked::after { transform:translateX(16px) }
+input[type=range] { accent-color:var(--brand); padding:0; background:none }
+.chart { display:flex; align-items:flex-end; gap:6px; height:120px } .chart div { flex:1; display:flex; flex-direction:column; justify-content:flex-end; align-items:center; gap:4px; height:100% } .chart i { width:100%; max-width:28px; background:var(--brand); border-radius:6px 6px 2px 2px; min-height:2px; transition:height .3s var(--ease) }
+@media (max-width:700px) { .prow .row { flex-wrap:wrap } .mday { min-height:64px } .mitem { display:none } }
 @media (max-width:1000px) { .day { grid-template-columns:1fr; height:auto } .cal { height:75vh } .top { grid-template-columns:1fr auto } .top .modes { grid-column:1/-1; grid-row:2 } }
 @media (max-width:600px) { .top, .day, .page { padding-left:16px; padding-right:16px } .panel, .card { padding:18px } .timer { font-size:64px } }
 @media (prefers-reduced-motion:reduce) { *, *::before, *::after { animation-duration:.01ms !important; transition-duration:.01ms !important } }

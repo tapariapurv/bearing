@@ -118,7 +118,8 @@ import AppKit
         Tool(name: "get_focus_stats", scope: "read", about: "Focus sessions: hours, count, quality and distractions, per goal.", props: ["days": ["type": "integer", "description": "Look back this many days, default 7"]], required: []),
         Tool(name: "search", scope: "read", about: "Search tasks, goals, classes, projects and the journal.", props: ["query": s("Words to find")], required: ["query"]),
         Tool(name: "write_journal", scope: "write", about: "Add to (or replace) a day's journal entry.", props: ["text": s("Text"), "date": s("YYYY-MM-DD, default today"), "replace": ["type": "boolean"]], required: ["text"]),
-        Tool(name: "update_area", scope: "edit", about: "Rename a class or project, switch its kind, or link it to a goal (empty goal unlinks).", props: ["name": s("Current name"), "new_name": s(""), "kind": ["type": "string", "enum": ["class", "project"]], "goal": s("Goal title")], required: ["name"]),
+        Tool(name: "update_area", scope: "edit", about: "Rename a class or project, switch its kind, link it to a goal (empty goal unlinks), set its emoji icon or hex color, or move it between priority, active, done and archived.", props: ["name": s("Current name"), "new_name": s(""), "kind": ["type": "string", "enum": ["class", "project"]], "goal": s("Goal title"),
+            "icon": s("One emoji"), "color": s("Hex like #3FAE86"), "status": ["type": "string", "enum": ["priority", "active", "done", "archived"]]], required: ["name"]),
         Tool(name: "update_goal", scope: "edit", about: "Change a goal's fields.", props: ["title": s("Current title"), "new_title": s(""), "why": s(""), "metric": s(""), "notes": s("Next actions"),
             "status": ["type": "string", "enum": ["none", "onTrack", "adjust", "offTrack"]], "weekly_hours": ["type": "number"]], required: ["title"]),
         Tool(name: "delete_block", scope: "delete", about: "Remove a time block.", props: ["id": s("Block id from get_schedule")], required: ["id"]),
@@ -165,6 +166,16 @@ import AppKit
     }
 
     struct Fail: Error, CustomStringConvertible { let description: String }
+    /// Runs a tool for the in-app coach. Pressing Apply on its actions is the consent, so only "off" blocks it.
+    func coachRun(_ name: String, _ a: [String: Any]) -> String {
+        guard let t = Self.tools.first(where: { $0.name == name }) else { return "Unknown action \(name)" }
+        guard mode(t.scope) != .off else { return "Skipped \(name): \(t.scope) access is off in Settings › Agents" }
+        do { let r = try run(name, a); log.insert(Entry(agent: "Coach", tool: name, result: "✓"), at: 0); return r } catch { return "\(name): \(error)" }
+    }
+    /// The tools the coach may use, one line each.
+    var coachGuide: String {
+        Self.tools.filter { $0.scope != "read" && mode($0.scope) != .off }.map { "- \($0.name): \($0.about) Args: \($0.props.keys.sorted().joined(separator: ", "))" }.joined(separator: "\n")
+    }
     private func run(_ name: String, _ a: [String: Any]) throws -> String {
         let st = Store.shared
         func str(_ k: String) -> String? { (a[k] as? String).map { $0.trimmingCharacters(in: .whitespaces) } }
@@ -244,8 +255,11 @@ import AppKit
             return "Saved the journal for \(k)"
         case "update_area":
             let x = try area(str("name") ?? ""), i = st.data.areas!.firstIndex { $0.id == x.id }!
-            if let n = str("new_name"), !n.isEmpty { st.data.areas![i].name = n }
-            if let k = str("kind") { st.data.areas![i].isClass = k != "project"; if k == "project" { st.data.areas![i].subs = nil } }
+            if let n = str("new_name"), !n.isEmpty { st.renameArea(x.id, to: n) }
+            if let k = str("kind") { st.data.areas![i].isClass = k != "project"; if k == "project" { st.data.areas![i].subs = nil }; st.relabel(st.data.tasks.filter { $0.areaID == x.id }.map(\.id)) }
+            if let e = str("icon") { st.data.areas![i].icon = e.isEmpty ? nil : String(e.prefix(2)) }
+            if let c = str("color") { guard c.isEmpty || Color(hex: c) != nil else { throw Fail(description: "Color must be a hex like #3FAE86") }; st.data.areas![i].hex = c.isEmpty ? nil : c.uppercased() }
+            if let v = str("status") { st.data.areas![i].priority = v == "priority" ? true : nil; st.data.areas![i].done = v == "done" ? true : nil; st.data.areas![i].archived = v == "archived" ? true : nil }
             if let g = str("goal") { st.link(area: x.id, goal: g.isEmpty ? nil : try goal(g).id) }
             return "Updated \(st.data.areas![i].name)"
         case "update_goal":
@@ -297,7 +311,7 @@ import AppKit
             let i = st.data.areas!.firstIndex { $0.id == x.id }!
             if !(st.data.areas![i].subs ?? []).contains(n) { st.data.areas![i].subs = (x.subs ?? []) + [n] }
             return "Added \(n) to \(x.name)"
-        case "delete_area": let x = try area(str("name") ?? ""); st.data.areas?.removeAll { $0.id == x.id }; return "Removed \(x.name)"
+        case "delete_area": let x = try area(str("name") ?? ""); st.deleteArea(x.id); return "Removed \(x.name)"
         case "time_block":
             let t = try task(), m = a["minutes"] as? Int ?? st.data.prefs.blockLength
             var start = st.nextFreeSlot(minutes: m)

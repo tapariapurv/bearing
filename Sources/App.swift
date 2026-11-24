@@ -6,14 +6,14 @@ import AppKit
 #endif
 
 enum Page: String, CaseIterable, Identifiable {
-    case today = "Today", goals = "Goals", week = "Week", tasks = "Tasks", focus = "Focus", coach = "Coach", journal = "Journal", capture = "Capture", insights = "Insights", projects = "Projects"
+    case today = "Today", goals = "Goals", week = "Week", tasks = "Tasks", focus = "Focus", coach = "Coach", journal = "Journal", capture = "Capture", insights = "Insights", projects = "Projects", month = "Month"
     var id: String { rawValue }
     var icon: String { switch self {
         case .today: "sun.max"; case .goals: "scope"; case .week: "calendar"; case .tasks: "checklist"; case .focus: "timer"
-        case .coach: "bubble.left.and.text.bubble.right"; case .journal: "book"; case .capture: "waveform"; case .insights: "chart.bar"; case .projects: "folder" } }
+        case .coach: "bubble.left.and.text.bubble.right"; case .journal: "book"; case .capture: "waveform"; case .insights: "chart.bar"; case .projects: "folder"; case .month: "calendar.badge.clock" } }
     var tint: Color { switch self {
         case .today: goalPalette[6]; case .goals: goalPalette[1]; case .week: goalPalette[0]; case .tasks: goalPalette[2]; case .focus: goalPalette[3]
-        case .coach: goalPalette[7]; case .journal: goalPalette[4]; case .capture: goalPalette[5]; case .insights: goalPalette[0]; case .projects: goalPalette[5] } }
+        case .coach: goalPalette[7]; case .journal: goalPalette[4]; case .capture: goalPalette[5]; case .insights: goalPalette[0]; case .projects: goalPalette[5]; case .month: goalPalette[0] } }
 }
 @Observable @MainActor final class Nav {
     static let shared = Nav()
@@ -25,6 +25,7 @@ enum Page: String, CaseIterable, Identifiable {
     var reflect = false
     var showTasks = true       // left tasks panel
     var side = false           // coach in the right panel
+    var jump: Date?            // a day the Day view should open on
 }
 
 #if os(macOS)
@@ -108,7 +109,7 @@ struct PageView: View {
     var body: some View {
         switch page {
         case .today: WeekPage(dayMode: true); case .goals: GoalsPage(); case .week: WeekPage(); case .tasks: TasksPage(); case .focus: FocusPage()
-        case .coach: CoachPage(); case .journal: JournalPage(); case .capture: CapturePage(); case .insights: InsightsPage(); case .projects: ProjectsPage()
+        case .coach: CoachPage(); case .journal: JournalPage(); case .capture: CapturePage(); case .insights: InsightsPage(); case .projects: ProjectsPage(); case .month: MonthPage()
         }
     }
 }

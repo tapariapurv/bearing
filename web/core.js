@@ -29,6 +29,7 @@ function link(d, t) {
   if (!t.areaID && t.goalID) { const b = d.areas.find(a => a.goal === t.goalID); if (b) t.areaID = b.id }
 }
 const cmd = (d, type, args, extra = {}) => d.todoistToken && d.outbox.push({ uuid: uuid(), type, args, ...extra })
+export const relabel = (d, a) => d.tasks.filter(t => t.areaID === a.id && t.todoistID).forEach(t => cmd(d, 'item_update', { id: t.todoistID, labels: labels(d, t) }))
 
 export function addTask(d, { title, goalID, areaID, sub, due, notes = '', priority = 1 }) {
   const t = { id: uuid(), title, notes, project: '', priority, done: false }
@@ -51,10 +52,11 @@ export function updateTask(d, t, ch) {
   if (ch.areaID !== undefined) ch.areaID ? t.areaID = ch.areaID : delete t.areaID
   if (ch.sub !== undefined) ch.sub ? t.sub = ch.sub : delete t.sub
   link(d, t)
+  if (ch.areaID !== undefined || ch.sub !== undefined) a.labels = labels(d, t)
   if (t.todoistID && Object.keys(a).length > 1) cmd(d, 'item_update', a)
   return t
 }
-export function setDone(d, t, done = !t.done) { t.done = done; if (t.todoistID) cmd(d, done ? 'item_close' : 'item_uncomplete', { id: t.todoistID }) }
+export function setDone(d, t, done = !t.done) { t.done = done; done ? t.doneAt = iso(new Date()) : delete t.doneAt; if (t.todoistID) cmd(d, done ? 'item_close' : 'item_uncomplete', { id: t.todoistID }) }
 export function deleteTask(d, t) { d.tasks = d.tasks.filter(x => x !== t); if (t.todoistID) cmd(d, 'item_delete', { id: t.todoistID }) }
 export function addBlock(d, { title, start, minutes, goalID, taskID }) {
   const b = { id: uuid(), title, start: iso(start), end: iso(+new Date(start) + minutes * 60000) }

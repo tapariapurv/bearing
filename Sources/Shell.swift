@@ -55,15 +55,15 @@ struct Shell: View {
                     TopActions()
                 }.padding(.leading, 76)
                 ModeSwitch()
-            }.frame(height: 36).padding(.top, 10)
-            HStack(spacing: 14) {
+            }.frame(height: 30).padding(.top, 0)   // centered on the traffic lights
+            HStack(spacing: 18) {
                 if nav.showTasks { TasksPanel().frame(width: 288).panel() }
-                PageView(page: nav.page).id(nav.page).frame(maxWidth: .infinity, maxHeight: .infinity).panel()
+                PageView(page: nav.page).id(nav.page).transition(.opacity.combined(with: .offset(y: 6))).frame(maxWidth: .infinity, maxHeight: .infinity).panel()
                 if nav.side { CoachPage().frame(width: 360).panel() }
-                else if nav.page == .today { DayPanel().frame(width: 310).panel() }
-            }
+                else if nav.page == .today { DayPanel().frame(width: 310).panel().transition(.opacity.combined(with: .move(edge: .trailing))) }
+            }.animation(.easeOut(duration: 0.2), value: nav.page).animation(.easeOut(duration: 0.2), value: nav.side).animation(.easeOut(duration: 0.2), value: nav.showTasks)
         }
-        .padding([.horizontal, .bottom], 14)
+        .padding([.horizontal, .bottom], 18)
         .background(Color.chrome)
         .ignoresSafeArea(edges: .top)
     }
@@ -73,22 +73,23 @@ struct Shell: View {
 struct ModeSwitch: View {
     @State private var nav = Nav.shared
     @Namespace private var pill
-    private let modes: [(page: Page, title: String, icon: String)] = [(.today, "Day", "doc.text"), (.week, "Week", "rectangle.split.3x1"), (.goals, "Goals", "scope"), (.projects, "Projects", "folder"), (.focus, "Focus", "timer"), (.coach, "Coach", "sparkles")]
+    private let modes: [(page: Page, title: String, icon: String)] = [(.today, "Day", "doc.text"), (.week, "Week", "rectangle.split.3x1"), (.month, "Month", "calendar"), (.goals, "Goals", "scope"), (.projects, "Projects", "folder"), (.focus, "Focus", "timer"), (.coach, "Coach", "sparkles")]
     var body: some View {
         HStack(spacing: 2) {
             ForEach(modes, id: \.page) { m in
                 let on = nav.page == m.page
                 Button { nav.page = m.page; if m.page == .coach { nav.side = false } } label: {
-                    HStack(spacing: 5) { Image(systemName: m.icon); if on { Text(m.title).fixedSize().transition(.opacity) } }
-                        .font(.system(size: 12, weight: on ? .semibold : .medium)).foregroundStyle(on ? Color.primary : .secondary)
-                        .padding(.horizontal, on ? 11 : 9).frame(height: 26)
+                    // Every label always shows at a fixed weight, so nothing resizes; only the pill slides.
+                    HStack(spacing: 5) { Image(systemName: m.icon); Text(m.title).fixedSize() }
+                        .font(.system(size: 12, weight: .semibold)).foregroundStyle(on ? Color.primary : .secondary)
+                        .padding(.horizontal, 11).frame(height: 26)
                         .background { if on { Capsule().fill(Color.surface).shadow(color: .black.opacity(0.08), radius: 2, y: 1).matchedGeometryEffect(id: "pill", in: pill) } }
                         .contentShape(.capsule)
                 }.buttonStyle(.plain).help(m.title).accessibilityLabel(m.title).accessibilityAddTraits(on ? .isSelected : [])
             }
         }
         .padding(3).background(Color.primary.opacity(0.06), in: .capsule)
-        .animation(.spring(duration: 0.22, bounce: 0), value: nav.page)   // only the pill slides
+        .animation(.snappy(duration: 0.26), value: nav.page)   // only the pill slides
     }
 }
 
@@ -233,9 +234,8 @@ struct TasksPanel: View {
             HStack(spacing: 9) {
                 if let g = store.goal(b.goal) { GoalIcon(goal: g, size: 24) }
                 else {
-                    let c = area?.tint
-                    Image(systemName: area.map { b.sub != nil ? "folder" : $0.isClass ? "graduationcap" : "folder" } ?? "tray").font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(c?.ink ?? .secondary).frame(width: 24, height: 24).background(c?.wash ?? Color.primary.opacity(0.07), in: .rect(cornerRadius: 7))
+                    if let area { AreaIcon(area: area, size: 24, sub: b.sub != nil) }
+                    else { Image(systemName: "tray").font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary).frame(width: 24, height: 24).background(Color.primary.opacity(0.07), in: .rect(cornerRadius: 7)) }
                 }
                 Text(b.sub ?? b.title).font(.system(size: 13, weight: .medium)).lineLimit(1)
                 Spacer(minLength: 0)

@@ -7,8 +7,11 @@ enum AppSystem: String, Codable, CaseIterable { case gps = "GPS: goals, plan, sy
 struct Area: Codable, Identifiable, Hashable {
     var id = UUID(); var name = ""; var isClass = true; var subs: [String]?; var goal: UUID?
     var color: Int?; var archived: Bool?; var notes: String?
-    /// Its chosen color, or a stable one picked from its id.
-    var tint: Color { goalColor(color ?? Int(id.uuid.0)) }
+    var hex: String?; var icon: String?; var done: Bool?; var priority: Bool?   // icon: one emoji, the same on every device
+    /// Its own hex color, else its palette color, else a stable one picked from its id.
+    var tint: Color { hex.flatMap(Color.init(hex:)) ?? goalColor(color ?? Int(id.uuid.0)) }
+    /// Neither done nor archived: shows in task lists, pickers and the coach.
+    var active: Bool { archived != true && done != true }
 }   // goal: links the class or project to a season goal, so both modes see its tasks
 enum TaskGrouping: String, Codable, CaseIterable { case none = "None", due = "Due date", area = "Class or project", priority = "Priority", goal = "Goal" }
 enum TaskSort: String, Codable, CaseIterable { case due = "Due date", priority = "Priority", title = "Title" }
@@ -31,7 +34,7 @@ extension TaskView {
         return TaskView(group: g ?? (custom ? .area : .goal), sort: p.defaultSort ?? .due)
     }
     @MainActor func buckets(_ s: Store) -> [TaskBucket] {
-        let areas = (s.data.areas ?? []).filter { $0.archived != true }
+        let areas = (s.data.areas ?? []).filter(\.active)
         let list = s.data.tasks.filter { (showDone || !$0.done) && (area == nil || $0.areaID == area) && (sub == nil || $0.sub == sub) }
             .sorted { a, b in
                 switch sort {

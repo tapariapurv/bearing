@@ -1,6 +1,6 @@
 // Hosted Bearing MCP server (Streamable HTTP, JSON responses). Any device or server can reach it with the
 // token from Bearing › Settings › Agents › Remote: bk_<email, base64url>_<secret>. It reads and writes the
-// same Firestore document the apps sync, and obeys the user's synced permissions ("ask" counts as off here).
+// same Firestore document the apps sync, and obeys the user's synced permissions ("ask" counts as allow here: there is no one to ask).
 import crypto from 'node:crypto'
 import * as C from '../core.js'
 
@@ -53,7 +53,7 @@ export const TOOLS = [
   T('write_journal', 'write', 'Add to (or replace) a day\'s journal entry.', { text: s('Text'), date: s('YYYY-MM-DD, default today'), replace: { type: 'boolean' } }, ['text']),
   T('update_task', 'edit', 'Change a task. Only the fields you pass change; an empty string clears due, area, goal or sub_project.', { id: s('Task id'), title: s(''), area: s(''), sub_project: s(''), goal: s(''), due: s('YYYY-MM-DD'), priority: { type: 'integer' }, notes: s(''), add_resources: { type: 'array', items: { type: 'string' } } }, ['id']),
   T('complete_task', 'edit', 'Mark a task done (or not done with done=false).', { id: s('Task id'), done: { type: 'boolean' } }, ['id']),
-  T('update_area', 'edit', 'Rename a class or project, switch its kind, or link it to a goal (empty goal unlinks).', { name: s('Current name'), new_name: s(''), kind: { type: 'string', enum: ['class', 'project'] }, goal: s('Goal title') }, ['name']),
+  T('update_area', 'edit', 'Rename a class or project, switch its kind, or link it to a goal (empty goal unlinks).', { name: s('Current name'), new_name: s(''), kind: { type: 'string', enum: ['class', 'project'] }, goal: s('Goal title'), icon: s('Emoji, empty clears'), color: s('Hex like #3FAE86'), status: { type: 'string', enum: ['priority', 'active', 'done', 'archived'] } }, ['name']),
   T('update_goal', 'edit', 'Change a goal\'s fields.', { title: s('Current title'), new_title: s(''), why: s(''), metric: s(''), notes: s('Next actions'), status: { type: 'string', enum: ['none', 'onTrack', 'adjust', 'offTrack'] }, weekly_hours: { type: 'number' } }, ['title']),
   T('delete_task', 'delete', 'Delete a task.', { id: s('Task id') }, ['id']),
   T('delete_area', 'delete', 'Remove a class or project. Its tasks stay, unsorted.', { name: s('Class or project name') }, ['name']),
@@ -141,6 +141,10 @@ export function run(d, name, a = {}) {
       if (str('new_name')) x.name = str('new_name')
       if (str('kind')) { x.isClass = str('kind') !== 'project'; if (!x.isClass) delete x.subs }
       if (str('goal') !== undefined) link(d, x, str('goal') && C.goal(d, str('goal')).id)
+      if (str('icon') !== undefined) x.icon = str('icon') || undefined
+      if (str('color')) x.hex = str('color')
+      const st = str('status'); if (st) Object.assign(x, { priority: st === 'priority', done: st === 'done', archived: st === 'archived' })
+      if (str('new_name') || str('kind')) C.relabel(d, x)
       return `Updated ${x.name}`
     }
     case 'update_goal': {
@@ -177,7 +181,7 @@ export default async function handler(req, res) {
   if (m.id === undefined) return res.status(202).end() // notifications need no answer, so skip the Firestore read
   const acct = await account(req).catch(() => null)
   if (!acct) return res.status(401).json({ jsonrpc: '2.0', id: m.id ?? null, error: { code: -32001, message: 'Bad token. Copy it from Bearing › Settings › Agents › Remote.' } })
-  const d = acct.data, allowed = t => C.mode(d, t.scope) === 'allow'
+  const d = acct.data, allowed = t => C.mode(d, t.scope) !== 'off'
   switch (m.method) {
     case 'initialize': return ok({ protocolVersion: m.params?.protocolVersion || '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'bearing', version: '1.9.0' },
       instructions: 'Bearing is a planner: season goals, classes (with sub-projects) and projects, tasks, time blocks, focus sessions and a journal. Call get_overview first for names.' })

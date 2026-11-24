@@ -35,6 +35,7 @@ struct TaskItem: Codable, Identifiable, Hashable {
     var priority = 1           // Todoist scale: 4 is P1
     var done = false
     var areaID: UUID?          // class or project (custom system)
+    var doneAt: Date?          // when it was checked off, for stats
     var sub: String?           // sub-project tag inside a class
     var resources: [String]?   // links, Drive links, file paths
 }
@@ -138,6 +139,7 @@ struct Prefs: Codable {
     var profile: Profile?      // signed-in Google account; nil shows the welcome screen
     var system: AppSystem?     // nil is GPS
     var labelSync: Bool?, blockMinutes: Int?, dayStart: Int?, dayEnd: Int?, defaultGroup: TaskGrouping?, defaultSort: TaskSort?
+    var coachNotes: String?    // the person's own instructions for the coach
     var agentAccess: [String: String]?, agentKey: String?, webKey: String?   // agent permissions per scope, the hosted MCP server's secret, the web app's secret
     var blockLength: Int { blockMinutes ?? 60 }
 }
@@ -192,17 +194,28 @@ func dyn(_ l: UInt32, _ d: UInt32) -> Color {
     #endif
 }
 let goalPalette = [dyn(0x38BDF8, 0x7DD3FC), dyn(0xEF4444, 0xF87171), dyn(0x14B8A6, 0x2DD4BF), dyn(0xE5409F, 0xF472B6),
-                   dyn(0x3FAE86, 0x4ADE9F), dyn(0x6366F1, 0x818CF8), dyn(0xF59E0B, 0xFBBF24), dyn(0x8B5CF6, 0xA78BFA)]
-let goalColorNames = ["Sky", "Coral", "Teal", "Pink", "Green", "Indigo", "Amber", "Violet"]
+                   dyn(0x3FAE86, 0x4ADE9F), dyn(0x84CC16, 0xA3E635), dyn(0xF59E0B, 0xFBBF24), dyn(0x64748B, 0x94A3B8)]
+let goalColorNames = ["Sky", "Coral", "Teal", "Pink", "Green", "Lime", "Amber", "Slate"]
 func goalColor(_ i: Int) -> Color { goalPalette[abs(i) % 8] }
 extension Color {
-    /// Bearing indigo: primary actions and selection. Projects and goals bring their own colors.
-    static let brand = dyn(0x4F46E5, 0x8B93FF)
+    /// Bearing green: primary actions and selection. Projects and goals bring their own colors.
+    static let brand = dyn(0x2E9E74, 0x5FD3A5)
+    /// Pastel green (#E3F2EC) for selected rows, chips and soft fills.
+    static let brandSoft = dyn(0xE3F2EC, 0x1A3329)
     static let page = dyn(0xFFFFFF, 0x161618)
-    static let chrome = dyn(0xF4F4F9, 0x0D0D12)   // window background behind the floating panels
+    static let chrome = dyn(0xF3F6F4, 0x0C0F0E)   // window background behind the floating panels
     static let surface = dyn(0xFFFFFF, 0x1B1C22)
     /// Soft fill behind colored content, and readable text to put on it.
     var wash: Color { opacity(0.16) }
+    init?(hex: String) {
+        let h = hex.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: "#", with: "")
+        guard h.count == 6, let v = UInt32(h, radix: 16) else { return nil }
+        self.init(red: Double(v >> 16 & 255) / 255, green: Double(v >> 8 & 255) / 255, blue: Double(v & 255) / 255)
+    }
+    var hexString: String {
+        let r = resolve(in: EnvironmentValues()); func c(_ x: Float) -> Int { Int((max(0, min(1, x)) * 255).rounded()) }
+        return String(format: "#%02X%02X%02X", c(r.red), c(r.green), c(r.blue))
+    }
     var ink: Color { mix(with: .primary, by: 0.4) }
 }
 
@@ -297,7 +310,7 @@ extension Color {
     }
     func toggleDone(_ t: TaskItem) {
         guard let i = data.tasks.firstIndex(where: { $0.id == t.id }) else { return }
-        data.tasks[i].done.toggle()
+        data.tasks[i].done.toggle(); data.tasks[i].doneAt = data.tasks[i].done ? Date() : nil
         if let tid = t.todoistID {
             data.outbox.append(TodoistCommand(type: data.tasks[i].done ? "item_close" : "item_uncomplete", args: ["id": .string(tid)]))
             Todoist.shared.nudge()
@@ -328,8 +341,30 @@ extension Color {
         f(&data.areas![i])
     }
     func deleteArea(_ id: UUID) {
+        let ts = data.tasks.filter { $0.areaID == id }
         data.areas?.removeAll { $0.id == id }
-        for t in data.tasks where t.areaID == id { var n = t; n.areaID = nil; n.sub = nil; updateTask(n) }
+        for t in ts { var n = t; n.areaID = nil; n.sub = nil; updateTask(n) }
+        relabel(ts.map(\.id))
+    }
+    /// Renames a class or project and its Todoist label on every task, so the next pull keeps them linked.
+    func renameArea(_ id: UUID, to name: String) {
+        let n = name.trimmingCharacters(in: .whitespaces)
+        guard !n.isEmpty else { return }
+        editArea(id) { $0.name = n }
+        relabel(data.tasks.filter { $0.areaID == id }.map(\.id))
+    }
+    /// Pushes the current labels of these tasks to Todoist.
+    func relabel(_ ids: [UUID]) {
+        for t in data.tasks where ids.contains(t.id) {
+            guard let tid = t.todoistID else { continue }
+            data.outbox.append(TodoistCommand(type: "item_update", args: ["id": .string(tid), "labels": .list(data.labels(for: t))]))
+        }
+        if !ids.isEmpty { Todoist.shared.nudge() }
+    }
+    /// The color of a goal or a class/project an event is linked to.
+    func linkTint(_ id: UUID?) -> Color? {
+        guard let id else { return nil }
+        return goal(id).map { goalColor($0.color) } ?? data.areas?.first { $0.id == id }?.tint
     }
     /// Goal color first, then the task's class or project color, else gray.
     func tint(goal: UUID?, task: UUID?) -> Color {

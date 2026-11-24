@@ -8,6 +8,7 @@ import CryptoKit
 struct GEvent: Hashable {
     var id: String, cal: String, title: String, start: Date, end: Date, allDay: Bool
     var notes: String? = nil
+    var info: EventInfo? = nil
     var key: String { "g:\(cal):\(id)" }
 }
 struct GCal: Identifiable, Hashable { var id: String, title: String, color: Color, writable: Bool, primary: Bool, selected: Bool }
@@ -167,7 +168,11 @@ struct GoogleError: LocalizedError { var code: Int, text: String; var errorDescr
         }
         return items.compactMap { e in
             guard let id = e["id"] as? String, e["status"] as? String != "cancelled", let a = when(e["start"]), let b = when(e["end"]) else { return nil }
-            return GEvent(id: id, cal: cal, title: e["summary"] as? String ?? "Busy", start: a.0, end: b.0, allDay: a.1, notes: e["description"] as? String)
+            let conf = ((e["conferenceData"] as? [String: Any])?["entryPoints"] as? [[String: Any]])?.first { $0["entryPointType"] as? String == "video" }?["uri"] as? String
+            let files = (e["attachments"] as? [[String: Any]] ?? []).compactMap { f in (f["fileUrl"] as? String).map { EventInfo.File(title: f["title"] as? String ?? "Attachment", url: $0) } }
+            let info = EventInfo(location: e["location"] as? String, join: e["hangoutLink"] as? String ?? conf, link: e["htmlLink"] as? String,
+                                 files: files, people: (e["attendees"] as? [Any])?.count)
+            return GEvent(id: id, cal: cal, title: e["summary"] as? String ?? "Busy", start: a.0, end: b.0, allDay: a.1, notes: e["description"] as? String, info: info)
         }
     }
     /// Calendar ids can hold colons; event ids can't.

@@ -2,7 +2,7 @@ import SwiftUI
 
 // Bearing's own controls. Set once at the root, so screens don't restyle anything.
 
-extension Color { static let onBrand = dyn(0xFFFFFF, 0x0D0D1A) }
+extension Color { static let onBrand = dyn(0xFFFFFF, 0x06140E) }
 extension EnvironmentValues { @Entry var fillRow = false }
 
 extension View {
@@ -46,19 +46,13 @@ struct FieldStyle: ViewModifier {
 
 struct SwitchToggle: ToggleStyle {
     @Environment(\.fillRow) private var fill
+    /// The system switch: Liquid Glass on macOS 26 and iOS 26, tinted Bearing green.
     func makeBody(configuration c: Configuration) -> some View {
-        Button { c.isOn.toggle() } label: {
-            HStack(spacing: 10) {
-                c.label
-                if fill { Spacer(minLength: 8) }
-                Capsule().fill(c.isOn ? Color.brand : Color.primary.opacity(0.15)).frame(width: 34, height: 20)
-                    .overlay(alignment: c.isOn ? .trailing : .leading) {
-                        Circle().fill(.white).shadow(color: .black.opacity(0.2), radius: 1, y: 0.5).padding(2)
-                    }
-                    .animation(.spring(duration: 0.2, bounce: 0), value: c.isOn)
-            }.contentShape(.rect)
+        HStack(spacing: 10) {
+            c.label
+            if fill { Spacer(minLength: 8) }
+            Toggle("", isOn: c.$isOn).labelsHidden().toggleStyle(.switch).tint(.brand)
         }
-        .buttonStyle(.plain).accessibilityAddTraits(.isToggle).accessibilityValue(c.isOn ? "On" : "Off")
     }
 }
 
