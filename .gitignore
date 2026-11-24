@@ -4,3 +4,6 @@ google-client.local
 iOS/Bearing.xcodeproj/
 web/.vercel
 graphify-out/
+.env.local
+.posthog-wizard-cache/
+posthog-ai-observability-report.md

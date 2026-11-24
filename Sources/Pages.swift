@@ -1286,6 +1286,7 @@ struct AISettings: View {
     @State private var models: [String] = []
     @State private var result = ""
     @State private var testing = false
+    @State private var reset = false
     var body: some View {
         @Bindable var s = store
         let p = s.data.prefs.provider
@@ -1293,6 +1294,13 @@ struct AISettings: View {
             Section {
                 TextEditor(text: Binding(get: { s.data.prefs.coachNotes ?? "" }, set: { s.data.prefs.coachNotes = $0.isEmpty ? nil : $0 })).font(.callout).frame(minHeight: 80)
             } header: { Text("Instructions for the coach") } footer: { Text("How it should talk to you and what it should always keep in mind. Sent with every request.").font(.caption).foregroundStyle(.secondary) }
+            Section {
+                Button("Go Through Onboarding Again") { s.data.prefs.onboarded = false }
+                Button("Start Fresh", role: .destructive) { reset = true }
+                    .confirmationDialog("Start onboarding fresh?", isPresented: $reset) {
+                        Button("Forget and Start Over", role: .destructive) { s.data.about = nil; s.data.aboutSummary = nil; s.data.prefs.coachNotes = nil; s.data.prefs.onboarded = false }
+                    } message: { Text("The coach forgets what it learned about you and your instructions. Your goals, tasks and history stay.") }
+            } header: { Text("Onboarding") } footer: { Text("Again keeps what your coach knows and picks up from there.").font(.caption).foregroundStyle(.secondary) }
             Dropdown("Provider", selection: $s.data.prefs.provider, options: AIProvider.allCases.map { Opt($0.name, $0) })
             if p == .custom { TextField("Server address", text: $s.data.prefs.customURL) }
             if p == .bearing {

@@ -1,1 +1,7 @@
-{"type":"module","private":true}
+{
+  "type": "module",
+  "private": true,
+  "dependencies": {
+    "posthog-node": "^6.0.0"
+  }
+}

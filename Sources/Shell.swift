@@ -32,7 +32,7 @@ struct RootView: View {
     @State private var nav = Nav.shared
     @State private var store = Store.shared
     var body: some View {
-        Group { if store.data.prefs.profile == nil { WelcomeView() } else { Shell() } }
+        Group { if store.data.prefs.profile == nil || store.data.prefs.onboarded == false { Onboarding() } else { Shell() } }
             .sheet(isPresented: $nav.seasonSetup) { SeasonSetup().bearingStyle() }
             .sheet(isPresented: $nav.dailySync) { DailySync().bearingStyle() }
             .sheet(isPresented: $nav.reflect) { ReflectView().bearingStyle() }

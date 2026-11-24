@@ -140,6 +140,7 @@ struct Prefs: Codable {
     var system: AppSystem?     // nil is GPS
     var labelSync: Bool?, blockMinutes: Int?, dayStart: Int?, dayEnd: Int?, defaultGroup: TaskGrouping?, defaultSort: TaskSort?
     var coachNotes: String?    // the person's own instructions for the coach
+    var onboarded: Bool?       // false while onboarding runs; nil for people from before it existed
     var agentAccess: [String: String]?, agentKey: String?, webKey: String?   // agent permissions per scope, the hosted MCP server's secret, the web app's secret
     var blockLength: Int { blockMinutes ?? 60 }
 }

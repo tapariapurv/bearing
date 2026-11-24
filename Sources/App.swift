@@ -353,13 +353,13 @@ extension Snapshot {
                 }
                 w.close()
             }
-            let p = Store.shared.data.prefs.profile; Store.shared.data.prefs.profile = nil
+            let p = Store.shared.data.prefs.profile, ob = Store.shared.data.prefs.onboarded; Store.shared.data.prefs.profile = nil
             let ww = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1240, height: 800), styleMask: [.titled, .fullSizeContentView], backing: .buffered, defer: false)
             ww.isReleasedWhenClosed = false; ww.titlebarAppearsTransparent = true; ww.contentView = NSHostingView(rootView: RootView()); ww.orderFrontRegardless()
             try? await Task.sleep(for: .milliseconds(700))
             let ws = Process(); ws.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
             ws.arguments = ["-x", "-o", "-l\(ww.windowNumber)", "\(dir)/Welcome-\(dark ? "dark" : "light").png"]; try? ws.run(); ws.waitUntilExit(); ww.close()
-            Store.shared.data.prefs.profile = p
+            Store.shared.data.prefs.profile = p; Store.shared.data.prefs.onboarded = ob
             for tab in MenuBarView.Tab.allCases {
                 let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 340, height: 460), styleMask: [.titled, .fullSizeContentView], backing: .buffered, defer: false)
                 w.isReleasedWhenClosed = false; w.contentView = NSHostingView(rootView: MenuBarView(tab: tab).bearingStyle().background(Color.surface))

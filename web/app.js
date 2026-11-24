@@ -71,8 +71,8 @@ function context() {
   if (j.length) o += 'Recent journal:\n' + j.map(x => `- ${x.id}: ${x.text.slice(0, 300)}`).join('\n') + '\n'
   return o
 }
-async function ai(messages, onTok) {
-  const r = await fetch('/api/ai', { method: 'POST', headers: auth(), body: JSON.stringify({ model: data.prefs.models?.bearing || 'anthropic/claude-sonnet-5.5', messages, stream: !!onTok, max_tokens: 2048 }) })
+async function ai(messages, onTok, aiSessionId) {
+  const r = await fetch('/api/ai', { method: 'POST', headers: auth(), body: JSON.stringify({ model: data.prefs.models?.bearing || 'anthropic/claude-sonnet-5.5', messages, stream: !!onTok, max_tokens: 2048, ...(aiSessionId && { aiSessionId }) }) })
   if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error?.message || j.error || `The coach is unavailable (${r.status}).`) }
   if (!onTok) return (await r.json()).choices?.[0]?.message?.content || ''
   const rd = r.body.getReader(), dec = new TextDecoder(); let buf = '', all = ''
@@ -341,7 +341,7 @@ function Coach() {
     data.chat ||= []; data.chat.push({ id: C.uuid(), role: 'user', text }, reply); rerender()
     try {
       const msgs = [{ role: 'system', content: persona + '\n\n' + actionGuide + '\n\n' + context() }, ...data.chat.slice(-13, -1).map(m => ({ role: m.role, content: split(m.text)[0] || m.text }))]
-      await ai(msgs, tok => { reply.text += tok; rerender() })
+      await ai(msgs, tok => { reply.text += tok; rerender() }, data.chat[0]?.id)
       learn(reply.text)
     } catch (e) { reply.text = e.message }
     save(() => {}); setBusy(false)
