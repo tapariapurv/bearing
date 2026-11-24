@@ -1,14 +1,26 @@
+import PostHog
 import SwiftUI
 import UserNotifications
 
 /// The phone app runs the same Store, Coach, sync and integrations as the Mac; only the layout differs.
 @main struct BearingApp: App {
     @Environment(\.scenePhase) private var phase
-    init() { if Store.isTesting { Snapshot.demo() } }
+
+    init() {
+        configurePostHog()
+        if Store.isTesting { Snapshot.demo() }
+    }
     var body: some Scene {
         WindowGroup {
             PhoneRoot().onChange(of: phase, initial: true) {
-                guard phase == .active else { if phase == .background { Store.shared.saveNow() }; return }
+                guard phase == .active else {
+                    if phase == .background {
+                        PostHogAppLogger.info("app_entered_background", attributes: ["lifecycle_state": "background"])
+                        Store.shared.saveNow()
+                    }
+                    return
+                }
+                PostHogAppLogger.info("app_became_active", attributes: ["lifecycle_state": "active"])
                 Todoist.shared.nudge(); Task { await Sync.pull() }
             }
             .task {
@@ -19,6 +31,36 @@ import UserNotifications
                 _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
             }
         }
+    }
+}
+
+private func configurePostHog() {
+    guard let token = Bundle.main.object(forInfoDictionaryKey: "POSTHOG_PROJECT_TOKEN") as? String,
+          !token.isEmpty else {
+#if DEBUG
+        assertionFailure("POSTHOG_PROJECT_TOKEN variable required by PostHog is missing or un-configured, this causes events to be silently missed. This error stops appearing once POSTHOG_PROJECT_TOKEN is configured")
+#endif
+        return
+    }
+
+    guard let host = Bundle.main.object(forInfoDictionaryKey: "POSTHOG_HOST") as? String,
+          !host.isEmpty else {
+#if DEBUG
+        assertionFailure("POSTHOG_HOST variable required by PostHog is missing or un-configured, this causes events to be silently missed. This error stops appearing once POSTHOG_HOST is configured")
+#endif
+        return
+    }
+
+    let config = PostHogConfig(projectToken: token, host: host)
+    config.errorTrackingConfig.autoCapture = true
+    config.logs.serviceName = Bundle.main.bundleIdentifier ?? "Bearing"
+    PostHogSDK.shared.setup(config)
+    PostHogAppLogger.info("posthog_logs_configured", attributes: ["capture_scope": "app_lifecycle"])
+}
+
+private enum PostHogAppLogger {
+    static func info(_ message: String, attributes: [String: Any]) {
+        PostHogSDK.shared.logger?.info(message, attributes: attributes)
     }
 }
 
@@ -57,5 +99,8 @@ struct PhoneRoot: View {
         .sheet(isPresented: $nav.dailySync) { DailySync().bearingStyle() }
         .sheet(isPresented: $nav.reflect) { ReflectView().bearingStyle() }
         .bearingStyle()
+        .onChange(of: tab) {
+            PostHogSDK.shared.capture("tab_selected", properties: ["tab": tab])
+        }
     }
 }
