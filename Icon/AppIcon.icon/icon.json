@@ -1,36 +1,14 @@
 {
-  "fill": {
-    "automatic-gradient": "srgb:0.10000,0.10000,0.11500,1.00000"
-  },
+  "fill": { "automatic-gradient": "srgb:0.25000,0.27000,0.78000,1.00000" },
   "groups": [
     {
       "layers": [
-        {
-          "glass": true,
-          "image-name": "north.svg",
-          "name": "north",
-          "fill": {
-            "solid": "srgb:1.00000,0.45000,0.16000,1.00000"
-          }
-        },
-        {
-          "glass": true,
-          "image-name": "south.svg",
-          "name": "south",
-          "opacity": 0.9
-        }
+        { "glass": true, "image-name": "peak.svg", "name": "peak" },
+        { "glass": true, "image-name": "flag.svg", "name": "flag", "fill": { "solid": "srgb:1.00000,0.72000,0.30000,1.00000" } }
       ],
-      "shadow": {
-        "kind": "layer-color",
-        "opacity": 0.5
-      },
-      "translucency": {
-        "enabled": true,
-        "value": 0.4
-      }
+      "shadow": { "kind": "neutral", "opacity": 0.5 },
+      "translucency": { "enabled": true, "value": 0.4 }
     }
   ],
-  "supported-platforms": {
-    "squares": "shared"
-  }
+  "supported-platforms": { "squares": "shared" }
 }

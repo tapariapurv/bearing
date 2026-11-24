@@ -143,7 +143,10 @@ struct FindTasksCard: View {
     }
     private func run(quiet: Bool = false) async {
         busy = true; defer { busy = false }
-        do { let n = try await Coach.findTasks(); status = n == 0 ? "Nothing new" : "Added \(n) task\(n == 1 ? "" : "s")" }
+        do {
+            let t = try await Coach.findTasks(manual: !quiet)
+            status = t.isEmpty ? "Nothing new in the last \(quiet ? "few days" : "week")" : "Added: " + t.joined(separator: ", ")
+        }
         catch { if !quiet { status = error.localizedDescription } }
     }
 }

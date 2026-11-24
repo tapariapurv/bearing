@@ -35,14 +35,10 @@ import AppKit
     func setMode(_ s: String, _ m: Mode) { Store.shared.data.prefs.agentAccess = (Store.shared.data.prefs.agentAccess ?? [:]).merging([s: m.rawValue]) { $1 } }
     var command: String { "claude mcp add --transport http bearing http://127.0.0.1:\(Self.port)/mcp --header \"Authorization: Bearer \(token)\"" }
     /// Remote token: bk_<email, base64url>_<secret>. The server finds the account from it, then checks the secret.
-    static let webURL = "https://bearing-planner.vercel.app"
+    static let webURL = Web.url
     var remoteToken: String? { bearer(Store.shared.data.prefs.agentKey) }
-    func bearer(_ key: String?) -> String? {
-        guard let k = key, let e = Store.shared.data.prefs.profile?.email else { return nil }
-        let b = Data(e.utf8).base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
-        return "bk_\(b)_\(k)"
-    }
-    static func newKey() -> String { (UUID().uuidString + UUID().uuidString).replacingOccurrences(of: "-", with: "").lowercased() }
+    func bearer(_ key: String?) -> String? { Web.bearer(key) }
+    static func newKey() -> String { Web.newKey() }
     func newRemoteKey() { Store.shared.data.prefs.agentKey = Self.newKey(); Task { await Sync.push() } }
     func openWeb() { // the token rides in the URL fragment, which the browser never sends to a server
         if Store.shared.data.prefs.webKey == nil { Store.shared.data.prefs.webKey = Self.newKey() }

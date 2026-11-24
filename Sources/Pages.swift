@@ -13,8 +13,8 @@ extension View {
                 if let accent { accent.frame(width: 4) }
             }.clipShape(.rect(cornerRadius: radius))
         }
-        .overlay(RoundedRectangle(cornerRadius: radius).strokeBorder(Color.primary.opacity(0.07)))
-        .shadow(color: .black.opacity(0.035), radius: 10, y: 3)
+        .overlay(RoundedRectangle(cornerRadius: radius).strokeBorder(Color.primary.opacity(0.06)))
+        .shadow(color: .black.opacity(0.03), radius: 12, y: 3)
     }
 }
 struct PillButton: ButtonStyle {
@@ -71,12 +71,12 @@ struct Card<C: View>: View {
     var accent: Color? = nil
     @ViewBuilder var content: C
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
             if let title { Text(title).font(.headline) }
             content
         }
-        .padding(20).frame(maxWidth: .infinity, alignment: .leading)
-        .surface(18, accent: accent)
+        .padding(24).frame(maxWidth: .infinity, alignment: .leading)
+        .surface(20, accent: accent)
     }
 }
 struct Pill: View {
@@ -89,7 +89,7 @@ struct Pill: View {
 struct Scroll<C: View>: View {
     @ViewBuilder var content: C
     var body: some View {
-        ScrollView { VStack(alignment: .leading, spacing: 16) { content }.padding(24).frame(maxWidth: 1040, alignment: .leading).frame(maxWidth: .infinity) }
+        ScrollView { VStack(alignment: .leading, spacing: 24) { content }.padding(.horizontal, 40).padding(.vertical, 32).frame(maxWidth: 1000, alignment: .leading).frame(maxWidth: .infinity) }
     }
 }
 struct ErrorText: View {
@@ -454,7 +454,7 @@ struct ActualGrid: View {
                     .frame(width: colW - 40).offset(x: 20, y: DayColumn.y(Date()) + 16)
             }
             ForEach(sessions) { s in
-                let c = store.goal(s.goalID).map { goalColor($0.color) } ?? .gray
+                let c = store.tint(goal: s.goalID, task: s.taskID)
                 let top = DayColumn.y(s.start), h = max(22, DayColumn.y(s.start.addingTimeInterval(s.seconds)) - top)
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 1) {
@@ -615,7 +615,7 @@ struct BlockView: View {
     private func snap(_ v: CGFloat) -> CGFloat { (v / Self.step).rounded() * Self.step }
     private var target: CGSize { CGSize(width: (drag.width / colW).rounded() * colW, height: snap(drag.height)) }
     var body: some View {
-        let c = store.goal(block.goalID).map { goalColor($0.color) } ?? .gray
+        let c = store.tint(goal: block.goalID, task: block.taskID)
         let h = max(18, height + grow - 2)
         ZStack(alignment: .topLeading) {
             if moving {   // where it will land
@@ -754,6 +754,7 @@ struct TimerButtons: View {
     }
 }
 struct FocusPage: View {
+    @State private var suggesting = false
     @State private var focus = Focus.shared
     @State private var store = Store.shared
     var body: some View {
@@ -770,6 +771,11 @@ struct FocusPage: View {
                         Segments(selection: Binding(get: { s.data.prefs.timerMode }, set: { s.data.prefs.timerMode = $0 }), options: TimerMode.allCases.map { Opt($0.rawValue, $0) }).frame(maxWidth: 340)
                         HStack {
                             TextField("What are you focusing on?", text: $f.title).field()
+                            Button(suggesting ? "Thinking…" : "Suggest") {
+                                Task { suggesting = true; defer { suggesting = false }
+                                    if let t = try? await Coach.suggestFocus() { f.title = t.title; f.goalID = store.goals.first { $0.title == t.goal }?.id ?? f.goalID }
+                                }
+                            }.disabled(suggesting).help("Let the coach pick the best thing to focus on now")
                             GoalPicker(goal: $f.goalID).labelsHidden().frame(width: 170)
                         }.frame(maxWidth: 520)
                     }
@@ -891,6 +897,7 @@ struct CoachPage: View {
     @State private var error: String?
     @State private var voice = Voice.shared
     @State private var transcribing = false
+    @State private var showMemory = false
     @State private var extracted: Extracted?
     private let starters = ["Plan my afternoon", "Reschedule what I didn't finish", "Which goal should I drop?", "Write a one-page plan for my top goal"]
     var body: some View {
@@ -899,6 +906,8 @@ struct CoachPage: View {
                 Text("Coach").font(.system(size: 15, weight: .semibold))
                 Spacer()
                 IconButton(icon: "target", label: "Turn into goals") { adopt() }.disabled(store.data.chat.isEmpty || busy)
+                IconButton(icon: "brain", label: "What the coach remembers") { showMemory.toggle() }
+                    .popover(isPresented: $showMemory) { MemoryList().frame(width: 360, height: 420) }
                 IconButton(icon: "square.and.pencil", label: "New chat") { store.data.chat = [] }.disabled(store.data.chat.isEmpty)
                 if nav.side { IconButton(icon: "xmark", label: "Close coach") { nav.side = false } }
             }.padding(.horizontal, 14).frame(height: 50)
@@ -956,9 +965,10 @@ struct CoachPage: View {
         Task {
             await MeetingLink.refresh()
             do {
-                try await AI.stream(system: Coach.system + "\n\n" + Coach.actionGuide, messages: history) { tok in
+                try await AI.stream(system: Coach.system + "\n\n" + Coach.actionGuide + "\n" + Coach.memoryGuide, messages: history) { tok in
                     if let i = store.data.chat.firstIndex(where: { $0.id == reply.id }) { store.data.chat[i].text += tok }
                 }
+                Coach.learn(from: store.data.chat.first { $0.id == reply.id }?.text ?? "")
             } catch {
                 self.error = error.localizedDescription
                 store.data.chat.removeAll { $0.id == reply.id && $0.text.isEmpty }
@@ -1275,13 +1285,18 @@ struct AISettings: View {
         Form {
             Dropdown("Provider", selection: $s.data.prefs.provider, options: AIProvider.allCases.map { Opt($0.name, $0) })
             if p == .custom { TextField("Server address", text: $s.data.prefs.customURL) }
-            if !p.isLocal || p == .custom {
+            if p == .bearing {
+                Dropdown("Model", selection: Binding(get: { AI.model }, set: { s.data.prefs.models[p.rawValue] = $0 }), options: [
+                    Opt("Claude Sonnet 5.5 (balanced)", "anthropic/claude-sonnet-5.5"), Opt("Claude Haiku 5.5 (fastest)", "anthropic/claude-haiku-5.5"), Opt("Claude Opus 5.5 (deepest)", "anthropic/claude-opus-5.5")])
+                Text("Runs through Bearing's server with your Google sign-in. No API key needed.").font(.caption).foregroundStyle(.secondary)
+            }
+            if p != .bearing && (!p.isLocal || p == .custom) {
                 SecureField("API key", text: $key).onChange(of: key) { Keychain.set("ai." + p.rawValue, key) }
                 if !p.isLocal { Text("Kept in your Mac's Keychain and sent only to \(p.name). Usage is billed by them. A Claude or ChatGPT app subscription doesn't include an API key.").font(.caption).foregroundStyle(.secondary) }
             }
             if p == .ollama { Text("Free and private. Install Ollama from ollama.com, then run a model such as llama3.2.").font(.caption).foregroundStyle(.secondary) }
-            TextField("Model", text: Binding(get: { s.data.prefs.models[p.rawValue] ?? (p == .ollama ? "llama3.2" : "") }, set: { s.data.prefs.models[p.rawValue] = $0 }))
-            if !models.isEmpty {
+            if p != .bearing { TextField("Model", text: Binding(get: { s.data.prefs.models[p.rawValue] ?? (p == .ollama ? "llama3.2" : "") }, set: { s.data.prefs.models[p.rawValue] = $0 })) }
+            if p != .bearing, !models.isEmpty {
                 Dropdown("Available", selection: Binding(get: { s.data.prefs.models[p.rawValue] ?? "" }, set: { s.data.prefs.models[p.rawValue] = $0 }), options: [Opt("Choose…", "")] + models.map { Opt($0, $0) })
             }
             HStack {
@@ -1421,5 +1436,28 @@ struct CreditsView: View {
                 }
             }
         }
+    }
+}
+
+/// What the coach has learned about you. Each fact goes into every AI request; delete any that are wrong.
+struct MemoryList: View {
+    @State private var store = Store.shared
+    var body: some View {
+        let m = store.data.memory ?? []
+        VStack(alignment: .leading, spacing: 10) {
+            Text("What the coach remembers").font(.system(size: 14, weight: .semibold))
+            Text("It learns these from your chats and uses them in every plan and reply.").font(.system(size: 12)).foregroundStyle(.secondary)
+            if m.isEmpty { Text("Nothing yet. Tell it about your routines, deadlines and what works for you.").font(.system(size: 12)).foregroundStyle(.tertiary) }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(m.reversed(), id: \.self) { f in
+                        HStack(alignment: .top) {
+                            Text(f).font(.system(size: 13)).frame(maxWidth: .infinity, alignment: .leading)
+                            Button { store.data.memory?.removeAll { $0 == f } } label: { Image(systemName: "xmark") }.buttonStyle(.plain).foregroundStyle(.secondary).help("Forget")
+                        }
+                    }
+                }
+            }
+        }.padding(16)
     }
 }

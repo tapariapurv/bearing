@@ -241,29 +241,39 @@ struct CalEvent: Identifiable, Hashable { var id: String, title: String, start: 
 // MARK: - AI (any major provider, or a local server)
 
 enum AIProvider: String, Codable, CaseIterable, Identifiable {
-    case ollama, lmstudio, custom, anthropic, openai, google, xai, meta, mistral, deepseek, groq, openrouter
+    case bearing, ollama, lmstudio, custom, anthropic, openai, google, xai, meta, mistral, deepseek, groq, openrouter
     var id: String { rawValue }
     var name: String { switch self {
-        case .ollama: "Ollama (free, on this Mac)"; case .lmstudio: "LM Studio (free, on this Mac)"; case .custom: "Custom server"
+        case .bearing: "Bearing AI (Claude, no key needed)"; case .ollama: "Ollama (free, on this Mac)"; case .lmstudio: "LM Studio (free, on this Mac)"; case .custom: "Custom server"
         case .anthropic: "Anthropic (Claude)"; case .openai: "OpenAI (ChatGPT)"; case .google: "Google (Gemini)"; case .xai: "xAI (Grok)"
         case .meta: "Meta (Llama)"; case .mistral: "Mistral"; case .deepseek: "DeepSeek"; case .groq: "Groq"; case .openrouter: "OpenRouter" } }
     @MainActor var baseURL: String { switch self {
-        case .ollama: "http://localhost:11434/v1"; case .lmstudio: "http://localhost:1234/v1"; case .custom: Store.shared.data.prefs.customURL
+        case .bearing: Web.url + "/api/ai"; case .ollama: "http://localhost:11434/v1"; case .lmstudio: "http://localhost:1234/v1"; case .custom: Store.shared.data.prefs.customURL
         case .anthropic: "https://api.anthropic.com/v1"; case .openai: "https://api.openai.com/v1"
         case .google: "https://generativelanguage.googleapis.com/v1beta/openai"; case .xai: "https://api.x.ai/v1"; case .meta: "https://api.llama.com/v1"
         case .mistral: "https://api.mistral.ai/v1"; case .deepseek: "https://api.deepseek.com/v1"; case .groq: "https://api.groq.com/openai/v1"; case .openrouter: "https://openrouter.ai/api/v1" } }
     var isLocal: Bool { self == .ollama || self == .lmstudio || self == .custom }
 }
+/// The hosted web app and its sign-in token, shared by the Mac and iPhone apps.
+@MainActor enum Web {
+    static let url = "https://bearing-planner.vercel.app"
+    static func bearer(_ key: String?) -> String? {
+        guard let k = key, let e = Store.shared.data.prefs.profile?.email else { return nil }
+        let b = Data(e.utf8).base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
+        return "bk_\(b)_\(k)"
+    }
+    nonisolated static func newKey() -> String { (UUID().uuidString + UUID().uuidString).replacingOccurrences(of: "-", with: "").lowercased() }
+}
 struct AIError: LocalizedError { var errorDescription: String? }
 
 @MainActor enum AI {
     static var provider: AIProvider { Store.shared.data.prefs.provider }
-    static var model: String { Store.shared.data.prefs.models[provider.rawValue] ?? (provider == .ollama ? "llama3.2" : "") }
+    static var model: String { Store.shared.data.prefs.models[provider.rawValue] ?? (provider == .ollama ? "llama3.2" : provider == .bearing ? "anthropic/claude-sonnet-5.5" : "") }
 
     private static func request(_ path: String, _ p: AIProvider) -> URLRequest? {
-        guard let u = URL(string: p.baseURL + path) else { return nil }
+        guard let u = URL(string: p.baseURL + (p == .bearing ? "" : path)) else { return nil }
         var r = URLRequest(url: u); r.timeoutInterval = 300
-        let key = Keychain.get("ai." + p.rawValue)
+        let key = p == .bearing ? Web.bearer(Store.shared.data.prefs.webKey) ?? "" : Keychain.get("ai." + p.rawValue)
         if p == .anthropic { r.setValue(key, forHTTPHeaderField: "x-api-key"); r.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version") }
         else if !key.isEmpty { r.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization") }
         return r
@@ -277,7 +287,10 @@ struct AIError: LocalizedError { var errorDescription: String? }
     static func stream(system: String, messages: [ChatMsg], onToken: (String) -> Void) async throws {
         let p = provider, anth = p == .anthropic
         guard !model.isEmpty else { throw AIError(errorDescription: "Choose a model in Settings → AI first.") }
-        if !p.isLocal && Keychain.get("ai." + p.rawValue).isEmpty { throw AIError(errorDescription: "Add your \(p.name) API key in Settings → AI, or switch to free local Ollama.") }
+        if p == .bearing {
+            guard Store.shared.data.prefs.profile?.email != nil else { throw AIError(errorDescription: "Sign in with Google in Settings → Accounts to use Bearing AI.") }
+            if Store.shared.data.prefs.webKey == nil { Store.shared.data.prefs.webKey = Web.newKey(); await Sync.push() }
+        } else if !p.isLocal && Keychain.get("ai." + p.rawValue).isEmpty { throw AIError(errorDescription: "Add your \(p.name) API key in Settings → AI, or switch to free local Ollama.") }
         guard var r = request(anth ? "/messages" : "/chat/completions", p) else { throw AIError(errorDescription: "That server address isn't valid.") }
         r.httpMethod = "POST"; r.setValue("application/json", forHTTPHeaderField: "Content-Type")
         var msgs: [[String: String]] = messages.map { ["role": $0.role, "content": $0.text] }
@@ -342,7 +355,7 @@ struct PlanChange: Decodable, Identifiable {
 struct GoalReview: Decodable { struct R: Decodable { var goal: String; var status: String; var assessment: String; var fix: String }; var reviews: [R] }
 struct Extracted: Decodable {
     struct G: Decodable { var title: String; var why: String?; var metric: String?; var weeklyHours: Double? }
-    struct T: Decodable { var title: String; var goal: String?; var due: String? }
+    struct T: Decodable { var title: String; var goal: String?; var due: String?; var area: String? }
     var compass: String?; var goals: [G]?; var tasks: [T]?
 }
 
@@ -362,8 +375,21 @@ struct AIActions: Decodable {
     <actions>{"changes":[{"action":"add|move|remove","title":"...","goal":"exact goal title or null","blockId":"id for move/remove","day":"yyyy-MM-dd","start":"HH:mm","minutes":60}],"tasks":[{"title":"...","goal":"..."}],"notes":[{"title":"...","body":"markdown"}]}</actions>
     "tasks" are to-do items; "changes" are calendar blocks; "notes" are documents. Use only what was asked for. Use null, not "null". Omit empty keys. Start times on the hour. Never overlap events. Keep the prose before it to one or two sentences; they will review and apply it.
     """
+    static let memoryGuide = """
+    Memory: when you learn something lasting about me (a preference, constraint, routine, recurring struggle, deadline, what works for me),     add it on its own line as <remember>one short fact</remember>. Skip anything already in Memory. Most replies need none.
+    """
+    /// Saves <remember> facts from a finished reply. Newest last, at most 80.
+    static func learn(from text: String) {
+        var m = Store.shared.data.memory ?? []
+        for part in text.components(separatedBy: "<remember>").dropFirst() {
+            let f = (part.components(separatedBy: "</remember>").first ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !f.isEmpty, f.count < 300, !m.contains(where: { $0.caseInsensitiveCompare(f) == .orderedSame }) { m.append(f) }
+        }
+        Store.shared.data.memory = Array(m.suffix(80))
+    }
     /// Splits a reply into what to show and the actions it carries.
     static func split(_ text: String) -> (String, AIActions?) {
+        let text = text.replacingOccurrences(of: "<remember>[^<]*(</remember>)?", with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
         guard let a = text.range(of: "<actions>") else {
             // Small local models often skip the tags and send bare JSON.
             guard let i = text.firstIndex(of: "{"), let x = extractJSON(AIActions.self, from: String(text[i...])), !x.lines.isEmpty else { return (text, nil) }
@@ -381,8 +407,10 @@ struct AIActions: Decodable {
     }
     /// Reads mail, calendar notes and meeting notes new since the last scan and adds the person's action items as tasks.
     /// One compact call with no coach context, to keep tokens low. Returns how many tasks were added.
-    static func findTasks() async throws -> Int {
-        let s = Store.shared, now = Date(), since = s.data.prefs.lastScan ?? now.adding(days: -2)
+    /// A manual run looks back a week so nothing slips through; the automatic one only reads what's new.
+    static func findTasks(manual: Bool = false) async throws -> [String] {
+        let s = Store.shared, now = Date(), last = s.data.prefs.lastScan ?? now.adding(days: -2)
+        let since = manual ? min(last, now.adding(days: -7)) : last
         var src = ""
         if GoogleCalendar.shared.connected {
             do { let m = try await GoogleCalendar.shared.mail(since: since); if !m.isEmpty { src += "EMAIL:\n\(m)" } }
@@ -393,11 +421,17 @@ struct AIActions: Decodable {
         for e in CalendarService.shared.events(from: since, to: now.adding(days: 2)) {
             if let n = e.notes?.trimmingCharacters(in: .whitespacesAndNewlines), !n.isEmpty { src += "EVENT \(e.start.dayKey) \(e.title): \(n.replacingOccurrences(of: "\n", with: " ").prefix(400))\n" }
         }
-        guard !src.isEmpty else { s.data.prefs.lastScan = now; return 0 }
+        if src.isEmpty, manual, !GoogleCalendar.shared.connected, MeetingLink.all.isEmpty {
+            throw AIError(errorDescription: "Nothing to read yet. Connect Google or a meeting-notes app in Settings › Accounts.")
+        }
+        guard !src.isEmpty else { s.data.prefs.lastScan = now; return [] }
+        let areas = (s.data.areas ?? []).filter { $0.archived != true }
         let p = """
         List action items the person must do themselves. Skip FYIs, newsletters, receipts, things others own, and anything in EXISTING. \
-        Reply with JSON only: {"tasks":[{"title":"verb first, under 10 words","goal":"exact goal title or null","due":"yyyy-MM-dd or null"}]}. At most 8; none is fine.
+        Reply with JSON only: {"tasks":[{"title":"verb first, under 10 words","goal":"exact goal title or null","area":"exact class or project name or null","due":"yyyy-MM-dd or null"}]}. \
+        Turn relative deadlines ("by Friday", "next week") into dates. At most 10; none is fine.
         GOALS: \(s.goals.map(\.title).joined(separator: "; "))
+        CLASSES AND PROJECTS: \(areas.map(\.name).joined(separator: "; "))
         EXISTING: \(s.data.tasks.suffix(80).map(\.title).joined(separator: "; "))
         \(src.prefix(12000))
         """
@@ -406,10 +440,10 @@ struct AIActions: Decodable {
         s.data.prefs.lastScan = now
         let new = fresh(x.tasks ?? [], existing: s.data.tasks.map(\.title))
         for t in new {
-            s.addTask(t.title, goal: s.goals.first { $0.title == t.goal }?.id)
-            if let d = t.due.flatMap({ parseTodoistDate($0 + "T09:00:00") }), let i = s.data.tasks.lastIndex(where: { $0.title == t.title }) { s.data.tasks[i].due = d }
+            let a = areas.first { $0.name.caseInsensitiveCompare(t.area ?? "") == .orderedSame }
+            s.addTask(t.title, goal: s.goals.first { $0.title == t.goal }?.id ?? a?.goal, area: a?.id, due: t.due.flatMap { parseTodoistDate($0 + "T09:00:00") })
         }
-        return new.count
+        return new.map(\.title)
     }
     /// Drops tasks whose title (ignoring case and spaces) already exists or repeats.
     nonisolated static func fresh(_ ts: [Extracted.T], existing: [String]) -> [Extracted.T] {
@@ -431,6 +465,7 @@ struct AIActions: Decodable {
         }
         if let qa = d.seasonQA, !qa.isEmpty { o += "Season setup answers:\n"; for x in qa { o += "- \(x.q) \(x.a)\n" } }
         if let a = d.aboutSummary, !a.isEmpty { o += "What you know about me: \(a)\n" }
+        if let m = d.memory, !m.isEmpty { o += "Memory (what you've learned about me):\n"; for f in m { o += "- \(f)\n" } }
         if let qa = d.about, !qa.isEmpty { o += "My recent answers to your questions:\n"; for x in qa { o += "- \(x.q) \(x.a)\n" } }
         o += loopContext
         o += accountContext
@@ -459,6 +494,19 @@ struct AIActions: Decodable {
         return o
     }
     static var system: String { persona + "\n\n" + context }
+    /// Picks the single best thing to focus on right now.
+    static func suggestFocus() async throws -> Extracted.T {
+        let p = "It's \(Date().formatted(date: .omitted, time: .shortened)). What one thing should I focus on right now? Weigh deadlines, my current block, and my core goals. Reply with JSON only: {\"title\":\"verb first, under 8 words\",\"goal\":\"exact goal title or null\"}"
+        guard let t = extractJSON(Extracted.T.self, from: try await AI.complete(system: system, prompt: p)) else { throw AIError(errorDescription: "No suggestion came back. Try again.") }
+        return t
+    }
+    /// After a reflection, keeps any lasting pattern it shows. One small call, silent on failure.
+    static func distill(_ r: Reflection) async {
+        let s = Store.shared
+        let txt = r.ratings.compactMap { g in s.goal(g.goal).map { "\($0.title): \(g.rating) \(g.note)" } }.joined(separator: "; ") + ((r.missed ?? []).isEmpty ? "" : " | not done: " + r.missed!.joined(separator: ", "))
+        let p = "My reflection for \(r.id): \(txt)\nIf this, together with my recent reflections, shows a lasting pattern (what drains me, what works, what keeps slipping), write up to 2 facts as <remember>fact</remember> lines. Otherwise reply with nothing."
+        if let out = try? await AI.complete(system: system + "\n\n" + memoryGuide, prompt: p) { learn(from: out) }
+    }
 
     static func draftWeek() async throws -> PlanDraft {
         let p = """

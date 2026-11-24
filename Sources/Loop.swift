@@ -5,7 +5,7 @@ import SwiftUI
 extension Coach {
     static func draftDay() async throws -> PlanDraft {
         let p = """
-        Plan my day for today only, from now until evening. Reply with JSON only: {"summary":"one sentence","changes":[{"action":"add|move|remove","title":"...","goal":"exact goal title or null","blockId":"block id for move or remove","day":"\(Date().dayKey)","start":"HH:mm","minutes":60,"reason":"short"}]}. \
+        It's \(Date().formatted(date: .omitted, time: .shortened)). Plan my day for today only, from now until evening; nothing before now. Anything due today or tomorrow comes first. Reply with JSON only: {"summary":"one sentence","changes":[{"action":"add|move|remove","title":"...","goal":"exact goal title or null","blockId":"block id for move or remove","day":"\(Date().dayKey)","start":"HH:mm","minutes":60,"reason":"short"}]}. \
         Put core goals first and in my best hours. Respect energizing and draining patterns from my reflections. Never overlap existing events or blocks. \
         Leave breathing room; 3 to 5 blocks is plenty. Use open tasks as block titles where they fit.
         """
@@ -276,6 +276,7 @@ struct ReflectView: View {
         let missed = Self.missed(blocks)
         all.append(Reflection(id: Self.day.dayKey, ratings: ratings.filter { !$0.rating.isEmpty }, missed: missed.isEmpty ? nil : missed))
         store.data.reflections = all
+        if let r = all.last { Task { await Coach.distill(r) } }
         if !missed.isEmpty {   // hand it to the AI as a local message: no tokens until the person replies
             store.data.chat.append(ChatMsg(role: "assistant", text: "From \(dayName)'s reflection, these didn't get done:\n" + missed.map { "• " + $0 }.joined(separator: "\n") + "\n\nWant me to find new time for them? Say \"reschedule\" and I'll propose blocks you can apply."))
         }

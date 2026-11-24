@@ -2,7 +2,7 @@ import SwiftUI
 
 // Bearing's own controls. Set once at the root, so screens don't restyle anything.
 
-extension Color { static let onBrand = dyn(0xFFFFFF, 0x111114) }
+extension Color { static let onBrand = dyn(0xFFFFFF, 0x0D0D1A) }
 extension EnvironmentValues { @Entry var fillRow = false }
 
 extension View {
@@ -201,7 +201,7 @@ struct SidebarRow<Icon: View>: View {
                     .foregroundStyle(selected ? Color.brand.ink : .primary)
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 6).padding(.vertical, 4)
+            .padding(.horizontal, 8).padding(.vertical, 6)
             .background(selected ? Color.brand.wash : hover ? Color.primary.opacity(0.05) : .clear, in: .rect(cornerRadius: 8))
             .contentShape(.rect)
         }

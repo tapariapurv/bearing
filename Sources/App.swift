@@ -6,14 +6,14 @@ import AppKit
 #endif
 
 enum Page: String, CaseIterable, Identifiable {
-    case today = "Today", goals = "Goals", week = "Week", tasks = "Tasks", focus = "Focus", coach = "Coach", journal = "Journal", capture = "Capture", insights = "Insights"
+    case today = "Today", goals = "Goals", week = "Week", tasks = "Tasks", focus = "Focus", coach = "Coach", journal = "Journal", capture = "Capture", insights = "Insights", projects = "Projects"
     var id: String { rawValue }
     var icon: String { switch self {
         case .today: "sun.max"; case .goals: "scope"; case .week: "calendar"; case .tasks: "checklist"; case .focus: "timer"
-        case .coach: "bubble.left.and.text.bubble.right"; case .journal: "book"; case .capture: "waveform"; case .insights: "chart.bar" } }
+        case .coach: "bubble.left.and.text.bubble.right"; case .journal: "book"; case .capture: "waveform"; case .insights: "chart.bar"; case .projects: "folder" } }
     var tint: Color { switch self {
         case .today: goalPalette[6]; case .goals: goalPalette[1]; case .week: goalPalette[0]; case .tasks: goalPalette[2]; case .focus: goalPalette[3]
-        case .coach: goalPalette[7]; case .journal: goalPalette[4]; case .capture: goalPalette[5]; case .insights: goalPalette[0] } }
+        case .coach: goalPalette[7]; case .journal: goalPalette[4]; case .capture: goalPalette[5]; case .insights: goalPalette[0]; case .projects: goalPalette[5] } }
 }
 @Observable @MainActor final class Nav {
     static let shared = Nav()
@@ -108,7 +108,7 @@ struct PageView: View {
     var body: some View {
         switch page {
         case .today: WeekPage(dayMode: true); case .goals: GoalsPage(); case .week: WeekPage(); case .tasks: TasksPage(); case .focus: FocusPage()
-        case .coach: CoachPage(); case .journal: JournalPage(); case .capture: CapturePage(); case .insights: InsightsPage()
+        case .coach: CoachPage(); case .journal: JournalPage(); case .capture: CapturePage(); case .insights: InsightsPage(); case .projects: ProjectsPage()
         }
     }
 }
@@ -380,6 +380,7 @@ extension Snapshot {
     // AI actions split out of a reply; reflection misses
     let (aiShown, acts) = Coach.split("Done.\n<actions>{\"tasks\":[{\"title\":\"Call Sam\"}],\"changes\":[{\"action\":\"add\",\"title\":\"Write\",\"day\":\"2026-01-05\",\"start\":\"09:00\"}]}</actions>")
     check(aiShown == "Done." && acts?.tasks?.first?.title == "Call Sam" && acts?.changes?.count == 1 && Coach.split("Hi").1 == nil, "AI actions parse")
+    check(Coach.split("Sure.\n<remember>Has class at 9am</remember>").0 == "Sure.", "memory tags hidden")
     var nb = Block(title: "Gym"); nb.done = false
     check(ReflectView.missed([nb, Block(title: "Read")]) == ["Gym"], "reflection collects not-done blocks")
     // Todoist merge

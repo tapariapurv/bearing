@@ -9,9 +9,9 @@ extension Color {
 }
 extension View {
     func panel() -> some View {
-        background(Color.surface).clipShape(.rect(cornerRadius: 16))
-            .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.primary.opacity(0.06)))
-            .shadow(color: .black.opacity(0.05), radius: 8, y: 2)
+        background(Color.surface).clipShape(.rect(cornerRadius: 22))
+            .overlay(RoundedRectangle(cornerRadius: 22).strokeBorder(Color.primary.opacity(0.05)))
+            .shadow(color: .black.opacity(0.04), radius: 14, y: 4)
     }
 }
 /// A borderless round icon button, the toolbar and panel headers' only control.
@@ -43,7 +43,7 @@ struct RootView: View {
 struct Shell: View {
     @State private var nav = Nav.shared
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 12) {
             ZStack {
                 Color.clear.contentShape(.rect)
                 #if os(macOS)
@@ -55,15 +55,15 @@ struct Shell: View {
                     TopActions()
                 }.padding(.leading, 76)
                 ModeSwitch()
-            }.frame(height: 32).padding(.top, 6)
-            HStack(spacing: 8) {
-                if nav.showTasks { TasksPanel().frame(width: 272).panel() }
+            }.frame(height: 36).padding(.top, 10)
+            HStack(spacing: 14) {
+                if nav.showTasks { TasksPanel().frame(width: 288).panel() }
                 PageView(page: nav.page).id(nav.page).frame(maxWidth: .infinity, maxHeight: .infinity).panel()
                 if nav.side { CoachPage().frame(width: 360).panel() }
-                else if nav.page == .today { DayPanel().frame(width: 290).panel() }
+                else if nav.page == .today { DayPanel().frame(width: 310).panel() }
             }
         }
-        .padding([.horizontal, .bottom], 8)
+        .padding([.horizontal, .bottom], 14)
         .background(Color.chrome)
         .ignoresSafeArea(edges: .top)
     }
@@ -73,7 +73,7 @@ struct Shell: View {
 struct ModeSwitch: View {
     @State private var nav = Nav.shared
     @Namespace private var pill
-    private let modes: [(page: Page, title: String, icon: String)] = [(.today, "Day", "doc.text"), (.week, "Week", "rectangle.split.3x1"), (.goals, "Goals", "scope"), (.focus, "Focus", "timer"), (.coach, "Coach", "sparkles")]
+    private let modes: [(page: Page, title: String, icon: String)] = [(.today, "Day", "doc.text"), (.week, "Week", "rectangle.split.3x1"), (.goals, "Goals", "scope"), (.projects, "Projects", "folder"), (.focus, "Focus", "timer"), (.coach, "Coach", "sparkles")]
     var body: some View {
         HStack(spacing: 2) {
             ForEach(modes, id: \.page) { m in
@@ -232,7 +232,11 @@ struct TasksPanel: View {
         Button { if open { collapsed.insert(key) } else { collapsed.remove(key) } } label: {
             HStack(spacing: 9) {
                 if let g = store.goal(b.goal) { GoalIcon(goal: g, size: 24) }
-                else { Image(systemName: area.map { b.sub != nil ? "folder" : $0.isClass ? "graduationcap" : "folder" } ?? "tray").font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary).frame(width: 24, height: 24).background(Color.primary.opacity(0.07), in: .rect(cornerRadius: 7)) }
+                else {
+                    let c = area?.tint
+                    Image(systemName: area.map { b.sub != nil ? "folder" : $0.isClass ? "graduationcap" : "folder" } ?? "tray").font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(c?.ink ?? .secondary).frame(width: 24, height: 24).background(c?.wash ?? Color.primary.opacity(0.07), in: .rect(cornerRadius: 7))
+                }
                 Text(b.sub ?? b.title).font(.system(size: 13, weight: .medium)).lineLimit(1)
                 Spacer(minLength: 0)
             }.padding(.vertical, 5).padding(.leading, b.sub != nil ? 16 : 0).contentShape(.rect)
@@ -245,6 +249,12 @@ struct TasksPanel: View {
                         Text("None").tag(UUID?.none); ForEach(store.goals) { Text($0.title).tag(UUID?.some($0.id)) }
                     }
                 }
+                if b.sub == nil {
+                    Picker("Color", selection: Binding(get: { area.color ?? Int(area.id.uuid.0) % 8 }, set: { c in store.editArea(area.id) { $0.color = c } })) {
+                        ForEach(0..<8, id: \.self) { Text(goalColorNames[$0]).tag($0) }
+                    }
+                }
+                Button("Manage Classes and Projects…") { Nav.shared.page = .projects }
                 Button("Delete \(b.sub ?? area.name)", role: .destructive) {
                     if let s = b.sub { if let i = store.data.areas?.firstIndex(where: { $0.id == area.id }) { store.data.areas![i].subs?.removeAll { $0 == s } } }
                     else { store.data.areas?.removeAll { $0.id == area.id } }

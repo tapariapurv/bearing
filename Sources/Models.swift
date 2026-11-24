@@ -112,7 +112,8 @@ enum TimerMode: String, Codable, CaseIterable { case stopwatch = "Stopwatch", co
 enum MusicSource: String, Codable, CaseIterable { case library = "Library", folder = "My folder", spotify = "Spotify", appleMusic = "Apple Music", none = "Silence" }
 
 struct Prefs: Codable {
-    var provider = AIProvider.ollama
+    var provider = AIProvider.bearing
+    var aiDefaulted: Bool?     // moved off the old Ollama default once
     var models: [String: String] = [:]
     var customURL = "http://localhost:8080/v1"
     var coachReadsJournal = true
@@ -168,6 +169,7 @@ struct AppData: Codable {
     var aboutSummary: String?  // older answers, compacted by the model
     var reflections: [Reflection]?
     var plannedDay: String?    // day key of the last daily sync
+    var memory: [String]?      // facts the coach chose to remember, newest last
 }
 
 extension Date {
@@ -194,11 +196,11 @@ let goalPalette = [dyn(0x38BDF8, 0x7DD3FC), dyn(0xEF4444, 0xF87171), dyn(0x14B8A
 let goalColorNames = ["Sky", "Coral", "Teal", "Pink", "Green", "Indigo", "Amber", "Violet"]
 func goalColor(_ i: Int) -> Color { goalPalette[abs(i) % 8] }
 extension Color {
-    /// Ink: black pills and selection, like a pen on white paper.
-    static let brand = dyn(0x111114, 0xF4F4F5)
+    /// Bearing indigo: primary actions and selection. Projects and goals bring their own colors.
+    static let brand = dyn(0x4F46E5, 0x8B93FF)
     static let page = dyn(0xFFFFFF, 0x161618)
-    static let chrome = dyn(0xF1F1F3, 0x0C0C0E)   // window background behind the floating panels
-    static let surface = dyn(0xFFFFFF, 0x1F2023)
+    static let chrome = dyn(0xF4F4F9, 0x0D0D12)   // window background behind the floating panels
+    static let surface = dyn(0xFFFFFF, 0x1B1C22)
     /// Soft fill behind colored content, and readable text to put on it.
     var wash: Color { opacity(0.16) }
     var ink: Color { mix(with: .primary, by: 0.4) }
@@ -221,7 +223,14 @@ extension Color {
 
     init() {
         guard !Self.isTesting, let raw = try? Data(contentsOf: file) else { return }
-        do { data = try Self.decoder.decode(AppData.self, from: raw) }
+        do {
+            data = try Self.decoder.decode(AppData.self, from: raw)
+            // Older installs defaulted to Ollama; move them to Bearing AI unless they picked an Ollama model.
+            if data.prefs.aiDefaulted == nil {
+                if data.prefs.provider == .ollama, data.prefs.models["ollama"] == nil { data.prefs.provider = .bearing }
+                data.prefs.aiDefaulted = true
+            }
+        }
         catch { // Never overwrite data we couldn't read
             try? raw.write(to: Self.dir.appendingPathComponent("data-unreadable-\(Int(Date().timeIntervalSince1970)).json"))
         }
@@ -313,6 +322,20 @@ extension Color {
         guard let i = data.areas?.firstIndex(where: { $0.id == id }) else { return }
         data.areas![i].goal = goal
         for t in data.tasks { var n = t; data.link(&n); if n != t { updateTask(n) } }
+    }
+    func editArea(_ id: UUID, _ f: (inout Area) -> Void) {
+        guard let i = data.areas?.firstIndex(where: { $0.id == id }) else { return }
+        f(&data.areas![i])
+    }
+    func deleteArea(_ id: UUID) {
+        data.areas?.removeAll { $0.id == id }
+        for t in data.tasks where t.areaID == id { var n = t; n.areaID = nil; n.sub = nil; updateTask(n) }
+    }
+    /// Goal color first, then the task's class or project color, else gray.
+    func tint(goal: UUID?, task: UUID?) -> Color {
+        if let g = self.goal(goal) { return goalColor(g.color) }
+        let a = data.tasks.first { $0.id == task }?.areaID
+        return data.areas?.first { $0.id == a }?.tint ?? .gray
     }
     func block(task t: TaskItem, at start: Date, minutes: Int? = nil) {
         let minutes = minutes ?? data.prefs.blockLength
