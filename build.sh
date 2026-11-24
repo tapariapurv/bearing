@@ -3,7 +3,7 @@
 # ./build.sh [--open] [--dmg] [--test]
 set -euo pipefail
 cd "$(dirname "$0")"
-V=2.2.0
+V=2.3.0
 A="$HOME/Applications/Bearing.app"
 B="build/Bearing"
 mkdir -p build
@@ -28,6 +28,7 @@ cat > "$A/Contents/Info.plist" <<EOF
 <key>CFBundleIconFile</key><string>AppIcon</string>
 <key>CFBundleIconName</key><string>AppIcon</string>
 <key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleURLTypes</key><array><dict><key>CFBundleURLName</key><string>Bearing</string><key>CFBundleURLSchemes</key><array><string>bearing</string></array></dict></array>
 <key>CFBundleShortVersionString</key><string>$V</string>
 <key>CFBundleVersion</key><string>$V</string>
 <key>LSMinimumSystemVersion</key><string>26.0</string>

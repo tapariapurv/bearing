@@ -79,6 +79,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var body: some Scene {
         Window("Bearing", id: "main") {
             RootView().frame(minWidth: 960, minHeight: 620)
+                .onOpenURL { u in if let p = Page.allCases.first(where: { $0.rawValue.lowercased() == u.host?.lowercased() }) { Nav.shared.page = p } } // bearing://today from emails
         }
         .defaultSize(width: 1240, height: 800)
         .windowStyle(.hiddenTitleBar)
@@ -334,6 +335,7 @@ extension Snapshot {
         NSApp.setActivationPolicy(.regular)
         NSApp.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
         Task {
+            Store.shared.data.prefs.onboarded = true // demo data: show the app, not onboarding
             try? await Task.sleep(for: .milliseconds(300))
             for p in Page.allCases {
                 let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1240, height: 800), styleMask: [.titled, .closable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)

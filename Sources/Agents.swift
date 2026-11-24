@@ -35,16 +35,10 @@ import AppKit
     func setMode(_ s: String, _ m: Mode) { Store.shared.data.prefs.agentAccess = (Store.shared.data.prefs.agentAccess ?? [:]).merging([s: m.rawValue]) { $1 } }
     var command: String { "claude mcp add --transport http bearing http://127.0.0.1:\(Self.port)/mcp --header \"Authorization: Bearer \(token)\"" }
     /// Remote token: bk_<email, base64url>_<secret>. The server finds the account from it, then checks the secret.
-    static let webURL = Web.url
     var remoteToken: String? { bearer(Store.shared.data.prefs.agentKey) }
     func bearer(_ key: String?) -> String? { Web.bearer(key) }
     static func newKey() -> String { Web.newKey() }
     func newRemoteKey() { Store.shared.data.prefs.agentKey = Self.newKey(); Task { await Sync.push() } }
-    func openWeb() { // the token rides in the URL fragment, which the browser never sends to a server
-        if Store.shared.data.prefs.webKey == nil { Store.shared.data.prefs.webKey = Self.newKey() }
-        let t = bearer(Store.shared.data.prefs.webKey) ?? ""
-        Task { await Sync.push(); NSWorkspace.shared.open(URL(string: "\(Self.webURL)/#t=\(t)")!) }
-    }
     var remoteCommand: String { "claude mcp add --transport http bearing \(Self.remoteURL) --header \"Authorization: Bearer \(remoteToken ?? "")\"" }
 
     func start() {
@@ -357,13 +351,6 @@ struct AgentSettings: View {
                     }
                 } else { Button("Turn On Remote Access") { a.newRemoteKey() }.disabled(Store.shared.data.prefs.profile?.email == nil) }
             } header: { Text("Remote") } footer: { Text("A hosted MCP server any device or server can reach. It follows the same permissions; \"Ask each time\" counts as Off there.").font(.caption).foregroundStyle(.secondary) }
-            Section {
-                HStack {
-                    Button("Open Bearing on the Web") { a.openWeb() }.disabled(Store.shared.data.prefs.profile?.email == nil)
-                    Spacer()
-                    Button("Sign Out All Browsers", role: .destructive) { Store.shared.data.prefs.webKey = nil; Task { await Sync.push() } }
-                }
-            } header: { Text("Web") } footer: { Text("Signs this browser in to \(Agents.webURL). Works on any device; send the link to yourself to open it on another one.").font(.caption).foregroundStyle(.secondary) }
             Section("Activity") {
                 if a.log.isEmpty { Text("No agent requests yet.").foregroundStyle(.secondary) }
                 ForEach(a.log.prefix(20)) { e in

@@ -141,6 +141,7 @@ struct Prefs: Codable {
     var labelSync: Bool?, blockMinutes: Int?, dayStart: Int?, dayEnd: Int?, defaultGroup: TaskGrouping?, defaultSort: TaskSort?
     var coachNotes: String?    // the person's own instructions for the coach
     var onboarded: Bool?       // false while onboarding runs; nil for people from before it existed
+    var emailTasks: Bool?, emailGoals: Bool?, emailNews: Bool?   // email opt-ins read by the server: tasks and goals default off, news on
     var agentAccess: [String: String]?, agentKey: String?, webKey: String?   // agent permissions per scope, the hosted MCP server's secret, the web app's secret
     var blockLength: Int { blockMinutes ?? 60 }
 }

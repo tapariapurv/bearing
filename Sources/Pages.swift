@@ -1348,6 +1348,13 @@ struct ConnectSettings: View {
                     Text(google.connected ? "Goals, plans and tasks sync to your other devices through your Google account." : "Sign in with Google below to sync with your iPhone.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
+                if !p.email.isEmpty {
+                    Section {
+                        Toggle("Tasks left undone", isOn: Binding(get: { s.data.prefs.emailTasks ?? false }, set: { s.data.prefs.emailTasks = $0; Task { await Sync.push() } }))
+                        Toggle("Weekly goal progress", isOn: Binding(get: { s.data.prefs.emailGoals ?? false }, set: { s.data.prefs.emailGoals = $0; Task { await Sync.push() } }))
+                        Toggle("Tips and check-ins", isOn: Binding(get: { s.data.prefs.emailNews ?? true }, set: { s.data.prefs.emailNews = $0; Task { await Sync.push() } }))
+                    } header: { Text("Email") } footer: { Text("Sent to \(p.email). Every email has an unsubscribe link.").font(.caption).foregroundStyle(.secondary) }
+                }
             }
             Section("Todoist") {
                 if s.data.todoistToken {

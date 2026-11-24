@@ -6,7 +6,7 @@ import * as C from '../core.js'
 
 const DOC = 'https://firestore.googleapis.com/v1/projects/bearing-514007/databases/(default)/documents/users/'
 let cached = { token: '', exp: 0 }
-async function saToken() {
+export async function saToken() {
   if (cached.exp > Date.now() + 60000) return cached.token
   const sa = JSON.parse(process.env.GOOGLE_SA), now = Math.floor(Date.now() / 1000)
   const b = o => Buffer.from(JSON.stringify(o)).toString('base64url')
@@ -21,13 +21,29 @@ export async function load(email) {
   const doc = await r.json()
   return { data: C.fill(JSON.parse(doc.fields.data.stringValue)), updateTime: doc.updateTime }
 }
+// Every account, for the daily email job. ponytail: one page of 300; add pageToken paging past that.
+export async function list() {
+  const r = await (await fetch(DOC + '?pageSize=300', { headers: { authorization: `Bearer ${await saToken()}` } })).json()
+  return (r.documents || []).map(d => ({ email: decodeURIComponent(d.name.split('/').pop()), created: d.createTime,
+    modified: (d.fields.modified?.doubleValue ?? 0) * 1000, data: C.fill(JSON.parse(d.fields.data.stringValue)) }))
+}
+// Email state lives in its own collection so it never races the apps' whole-document sync.
+const MAIL = DOC.replace('/users/', '/mail/')
+export async function mailState(email) {
+  const r = await fetch(MAIL + encodeURIComponent(email), { headers: { authorization: `Bearer ${await saToken()}` } })
+  return r.ok ? JSON.parse((await r.json()).fields.s.stringValue) : {}
+}
+export async function setMailState(email, st) {
+  await fetch(MAIL + encodeURIComponent(email), { method: 'PATCH', headers: { authorization: `Bearer ${await saToken()}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ fields: { s: { stringValue: JSON.stringify(st) } } }) })
+}
 export async function save(email, data, updateTime) {
   const u = `${DOC}${encodeURIComponent(email)}?updateMask.fieldPaths=data&updateMask.fieldPaths=modified&currentDocument.updateTime=${updateTime}`
   const r = await fetch(u, { method: 'PATCH', headers: { authorization: `Bearer ${await saToken()}`, 'content-type': 'application/json' },
     body: JSON.stringify({ fields: { data: { stringValue: JSON.stringify(data) }, modified: { doubleValue: Date.now() / 1000 } } }) })
   if (!r.ok) throw Object.assign(new Error(r.status === 400 || r.status === 409 || r.status === 412 ? 'Bearing changed at the same moment; try again.' : `Save failed (${r.status})`), { status: r.status })
 }
-export async function account(req, field = 'agentKey') { // webKey for the web app, agentKey for agents
+export async function account(req, field = 'agentKey') { // webKey authorizes Bearing AI, agentKey agents
   const m = /^Bearer bk_([A-Za-z0-9_-]+)_([a-f0-9]{64})$/.exec(req.headers.authorization || '')
   if (!m) return null
   const email = Buffer.from(m[1], 'base64url').toString(), doc = await load(email), key = doc?.data.prefs[field] || ''
