@@ -136,6 +136,9 @@ struct Prefs: Codable {
     var lastScan: Date?        // last time Coach.findTasks read mail and notes
     var profile: Profile?      // signed-in Google account; nil shows the welcome screen
     var system: AppSystem?     // nil is GPS
+    var labelSync: Bool?, blockMinutes: Int?, dayStart: Int?, dayEnd: Int?, defaultGroup: TaskGrouping?, defaultSort: TaskSort?
+    var agentAccess: [String: String]?, agentKey: String?, webKey: String?   // agent permissions per scope, the hosted MCP server's secret, the web app's secret
+    var blockLength: Int { blockMinutes ?? 60 }
 }
 struct Profile: Codable, Hashable {
     var name = "", email = ""
@@ -258,7 +261,7 @@ extension Color {
 
     // MARK: Task mutations (each one queues a Todoist command)
     func addTask(_ title: String, goal: UUID? = nil, area: UUID? = nil, sub: String? = nil, due: Date? = nil) {
-        var t = TaskItem(title: title, goalID: goal, due: due, areaID: area, sub: sub)
+        var t = TaskItem(title: title, goalID: goal, due: due, areaID: area, sub: sub); data.link(&t)
         if data.todoistToken {
             let temp = UUID().uuidString
             t.todoistID = temp
@@ -271,6 +274,7 @@ extension Color {
         Todoist.shared.nudge()
     }
     func updateTask(_ t: TaskItem) {
+        var t = t; data.link(&t)
         guard let i = data.tasks.firstIndex(where: { $0.id == t.id }) else { return }
         let old = data.tasks[i]; data.tasks[i] = t
         guard let tid = t.todoistID else { return }
@@ -304,17 +308,25 @@ extension Color {
         var b = b; b.eventID = CalendarService.shared.save(b); data.blocks[i] = b
     }
     func deleteBlock(_ b: Block) { CalendarService.shared.remove(b); data.blocks.removeAll { $0.id == b.id } }
-    func block(task t: TaskItem, at start: Date, minutes: Int = 60) {
+    /// Links a class or project to a goal (or unlinks with nil) and fills in both sides on existing tasks.
+    func link(area id: UUID, goal: UUID?) {
+        guard let i = data.areas?.firstIndex(where: { $0.id == id }) else { return }
+        data.areas![i].goal = goal
+        for t in data.tasks { var n = t; data.link(&n); if n != t { updateTask(n) } }
+    }
+    func block(task t: TaskItem, at start: Date, minutes: Int? = nil) {
+        let minutes = minutes ?? data.prefs.blockLength
         addBlock(Block(title: t.title, start: start, end: start.addingTimeInterval(Double(minutes) * 60), goalID: t.goalID, taskID: t.id))
     }
     /// Next free slot today (or tomorrow morning) for one-click time blocking.
-    func nextFreeSlot(minutes: Int = 60) -> Date {
+    func nextFreeSlot(minutes: Int? = nil) -> Date {
+        let minutes = minutes ?? data.prefs.blockLength, from = data.prefs.dayStart ?? 9, to = data.prefs.dayEnd ?? 19
         let cal = Calendar.current
         var t = cal.date(bySettingHour: cal.component(.hour, from: Date()) + 1, minute: 0, second: 0, of: Date()) ?? Date()
         let busy = data.blocks.map { ($0.start, $0.end) } + CalendarService.shared.events(from: Date(), to: Date().adding(days: 3)).map { ($0.start, $0.end) }
         for _ in 0..<96 {
             let h = cal.component(.hour, from: t)
-            if h < 9 || h >= 19 { t = cal.date(bySettingHour: 9, minute: 0, second: 0, of: h < 9 ? t : t.adding(days: 1))!; continue }
+            if h < from || h >= to { t = cal.date(bySettingHour: from, minute: 0, second: 0, of: h < from ? t : t.adding(days: 1))!; continue }
             let e = t.addingTimeInterval(Double(minutes) * 60)
             if let clash = busy.first(where: { $0.0 < e && $0.1 > t }) { t = clash.1 } else { return t }
         }

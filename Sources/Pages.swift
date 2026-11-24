@@ -1256,6 +1256,7 @@ struct SettingsView: View {
             ConnectSettings().tabItem { Label("Accounts", systemImage: "person.crop.circle") }
             Form { SystemSettings() }.formStyle(.grouped).tabItem { Label("System", systemImage: "square.grid.2x2") }
             AISettings().tabItem { Label("AI", systemImage: "sparkles") }
+            Form { AgentSettings() }.formStyle(.grouped).tabItem { Label("Agents", systemImage: "point.3.connected.trianglepath.dotted") }
             BlockSettings().tabItem { Label("Blocking", systemImage: "hand.raised") }
             CreditsView().tabItem { Label("Music Credits", systemImage: "music.note") }
         }.frame(width: 560, height: 460)

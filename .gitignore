@@ -2,3 +2,4 @@ build/
 .DS_Store
 google-client.local
 iOS/Bearing.xcodeproj/
+web/.vercel

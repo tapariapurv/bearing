@@ -240,6 +240,11 @@ struct TasksPanel: View {
         .contextMenu {
             if let area {
                 if area.isClass && b.sub == nil { Button("New Sub-project…") { newName = ""; subFor = area } }
+                if b.sub == nil {
+                    Picker("Goal", selection: Binding(get: { area.goal }, set: { store.link(area: area.id, goal: $0) })) {
+                        Text("None").tag(UUID?.none); ForEach(store.goals) { Text($0.title).tag(UUID?.some($0.id)) }
+                    }
+                }
                 Button("Delete \(b.sub ?? area.name)", role: .destructive) {
                     if let s = b.sub { if let i = store.data.areas?.firstIndex(where: { $0.id == area.id }) { store.data.areas![i].subs?.removeAll { $0 == s } } }
                     else { store.data.areas?.removeAll { $0.id == area.id } }

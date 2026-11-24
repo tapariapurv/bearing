@@ -55,7 +55,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             if let i = args.firstIndex(of: "--snapshot"), i + 2 < args.count { Snapshot.run(dir: args[i + 1], dark: args[i + 2] == "dark"); return }
             Blocker.shared.clearStale()
-            Todoist.shared.start()
+            Todoist.shared.start(); Agents.shared.start()
+            Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in Task { await Sync.pull() } }   // brings in web and remote-agent changes
             if GoogleCalendar.shared.connected { GoogleCalendar.shared.start(); Task { await Sync.pull() } }
             UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
             if CalendarService.shared.granted { Task { await CalendarService.shared.request() } }
@@ -536,6 +537,12 @@ extension Snapshot {
     var lt = TaskItem(title: "Lab", areaID: cl.id, sub: "Lab report"); check(ad.labels(for: lt) == ["Bio 101", "Lab report"], "class task labels carry class and sub-project")
     lt.areaID = nil; ad.applyLabels(["Lab report", "Bio 101"], to: &lt); check(lt.areaID == cl.id && lt.sub == "Lab report", "labels map back to class and sub-project")
     ad.applyLabels(["Website", "x"], to: &lt); check(lt.areaID == ad.areas?[1].id && lt.sub == nil, "standalone projects have no sub-project")
+    let gl = Goal(title: "Grades"); ad.areas![0].goal = gl.id
+    var t1 = TaskItem(title: "a", areaID: cl.id); ad.link(&t1); var t2 = TaskItem(title: "b", goalID: gl.id); ad.link(&t2)
+    check(t1.goalID == gl.id && t2.areaID == cl.id, "a class linked to a goal fills both sides of its tasks")
+    #if os(macOS)
+    check(Agents.tools.count == 20 && Set(Agents.tools.map(\.scope)) == Set(Agents.scopes.map(\.key)), "every agent tool has a permission scope")
+    #endif
     check(TaskEditor.url("/tmp/a.pdf")?.isFileURL == true && TaskEditor.url("drive.google.com/x")?.scheme == "https", "resource links resolve")
     check(Profile(name: "Purv Taparia").initials == "PT" && Profile(email: "a@b.c").initials == "A", "profile initials")
     let ft = Coach.fresh([.init(title: "Email Sam"), .init(title: "email  sam!"), .init(title: "Book flight")], existing: ["Book Flight"])

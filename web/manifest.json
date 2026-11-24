@@ -1,0 +1,2 @@
+{ "name": "Bearing", "short_name": "Bearing", "start_url": "/", "display": "standalone", "background_color": "#0d0d10", "theme_color": "#18181b",
+  "icons": [{ "src": "icon.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }] }

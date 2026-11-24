@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Bearing</title>
+<meta name="description" content="Bearing on the web: goals, tasks, time blocks, focus and journal, synced with the Mac and iPhone apps.">
+<meta name="theme-color" content="#18181b">
+<link rel="icon" href="icon.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="manifest.json">
+<style>
+:root { --ink:#111114; --bg:#f6f6f7; --card:#fff; --line:#e4e4e7; --mute:#71717a; --brand:#ff7329; --ok:#16a34a; --bad:#dc2626; color-scheme:light dark; }
+@media (prefers-color-scheme: dark) { :root { --ink:#f4f4f5; --bg:#0d0d10; --card:#18181b; --line:#2a2a30; --mute:#a1a1aa; } }
+* { box-sizing:border-box } body { margin:0; font:15px/1.45 -apple-system, BlinkMacSystemFont, "Inter", system-ui, sans-serif; background:var(--bg); color:var(--ink) }
+a { color:inherit } button, input, select, textarea { font:inherit; color:inherit }
+button { border:1px solid var(--line); background:var(--card); border-radius:8px; padding:6px 12px; cursor:pointer }
+button:active { transform:scale(.97) } button.primary { background:var(--brand); border-color:var(--brand); color:#fff; font-weight:600 }
+button.link { border:0; background:none; padding:4px; color:var(--mute) } button.link:hover { color:var(--ink) }
+input, select, textarea { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:7px 10px; width:100% }
+textarea { min-height:140px; resize:vertical } input[type=checkbox] { width:auto; accent-color:var(--brand) }
+.app { display:grid; grid-template-columns:220px 1fr; min-height:100vh }
+nav { border-right:1px solid var(--line); padding:20px 12px; display:flex; flex-direction:column; gap:2px; position:sticky; top:0; height:100vh }
+nav .logo { display:flex; align-items:center; gap:10px; font-weight:700; font-size:18px; padding:0 8px 18px }
+nav .logo img { width:30px; height:30px }
+nav a { text-decoration:none; padding:7px 10px; border-radius:8px; color:var(--mute) } nav a.on, nav a:hover { background:var(--card); color:var(--ink) }
+nav .me { margin-top:auto; font-size:13px; color:var(--mute); padding:8px }
+main { padding:28px clamp(16px,4vw,48px); max-width:900px; width:100% }
+h1 { font-size:26px; margin:0 0 4px } h2 { font-size:15px; margin:24px 0 8px; color:var(--mute); font-weight:600 }
+.sub { color:var(--mute); margin:0 0 18px }
+.card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:4px 14px; margin-bottom:12px }
+.row { display:flex; align-items:center; gap:10px; padding:9px 0; border-bottom:1px solid var(--line) } .row:last-child { border:0 }
+.row .grow { flex:1; min-width:0 } .tag { font-size:12px; color:var(--mute) } .tag.p4 { color:var(--bad) } .tag.p3 { color:var(--brand) }
+.done { text-decoration:line-through; color:var(--mute) }
+.add { display:flex; gap:8px; margin-bottom:12px } .add input { flex:1 }
+.grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:12px }
+.bar { height:6px; border-radius:3px; background:var(--line); overflow:hidden } .bar i { display:block; height:100%; background:var(--brand) }
+.timer { font-size:72px; font-weight:700; font-variant-numeric:tabular-nums; text-align:center; margin:24px 0 }
+.center { display:flex; justify-content:center; gap:10px; flex-wrap:wrap }
+.login { min-height:100vh; display:grid; place-items:center; text-align:center } .login img { width:96px }
+.field { display:grid; grid-template-columns:1fr 200px; gap:12px; align-items:center; padding:10px 0; border-bottom:1px solid var(--line) } .field:last-child { border:0 }
+code { font-size:12px; word-break:break-all; background:var(--bg); padding:2px 4px; border-radius:4px }
+.toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:var(--ink); color:var(--bg); padding:8px 14px; border-radius:8px }
+@media (max-width:700px) { .app { grid-template-columns:1fr } nav { position:fixed; bottom:0; top:auto; height:auto; width:100%; flex-direction:row; overflow-x:auto; border:0; border-top:1px solid var(--line); background:var(--bg); padding:6px; z-index:2 }
+  nav .logo, nav .me { display:none } nav a { white-space:nowrap; font-size:13px } main { padding-bottom:80px } .field { grid-template-columns:1fr } }
+@media (prefers-reduced-motion: reduce) { * { transition:none!important } }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="module" src="app.js"></script>
+</body>
+</html>

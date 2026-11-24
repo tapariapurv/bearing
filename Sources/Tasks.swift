@@ -4,7 +4,7 @@ import AppKit
 #endif
 
 enum AppSystem: String, Codable, CaseIterable { case gps = "GPS: goals, plan, system", classes = "Classes and projects" }
-struct Area: Codable, Identifiable, Hashable { var id = UUID(); var name = ""; var isClass = true; var subs: [String]? }
+struct Area: Codable, Identifiable, Hashable { var id = UUID(); var name = ""; var isClass = true; var subs: [String]?; var goal: UUID? }   // goal: links the class or project to a season goal, so both modes see its tasks
 enum TaskGrouping: String, Codable, CaseIterable { case none = "None", due = "Due date", area = "Class or project", priority = "Priority", goal = "Goal" }
 enum TaskSort: String, Codable, CaseIterable { case due = "Due date", priority = "Priority", title = "Title" }
 struct TaskView: Codable, Identifiable, Hashable {
@@ -21,7 +21,10 @@ struct TaskBucket: Identifiable {
     var tasks: [TaskItem] = []
 }
 extension TaskView {
-    static func all(_ custom: Bool) -> TaskView { TaskView(group: custom ? .area : .goal) }
+    @MainActor static func all(_ custom: Bool) -> TaskView {
+        let p = Store.shared.data.prefs, g = p.defaultGroup.flatMap { $0 == (custom ? .goal : .area) ? nil : $0 }
+        return TaskView(group: g ?? (custom ? .area : .goal), sort: p.defaultSort ?? .due)
+    }
     @MainActor func buckets(_ s: Store) -> [TaskBucket] {
         let areas = s.data.areas ?? []
         let list = s.data.tasks.filter { (showDone || !$0.done) && (area == nil || $0.areaID == area) && (sub == nil || $0.sub == sub) }
@@ -67,8 +70,15 @@ extension TaskView {
 extension AppData {
     /// Todoist labels for a task: its class or project name, then its sub-project tag.
     func labels(for t: TaskItem) -> [String] {
+        guard prefs.labelSync ?? true else { return [] }
         let a = (areas ?? []).first { $0.id == t.areaID }?.name
         return [a, a == nil ? nil : t.sub].compactMap { $0 }.filter { !$0.isEmpty }
+    }
+    /// Fills a task's missing goal from its class/project, or its missing class/project from its goal.
+    func link(_ t: inout TaskItem) {
+        let a = areas ?? []
+        if t.goalID == nil { t.goalID = a.first { $0.id == t.areaID }?.goal }
+        if t.areaID == nil, let g = t.goalID { t.areaID = a.first { $0.goal == g }?.id }
     }
     func applyLabels(_ ls: [String], to t: inout TaskItem) {
         guard let a = (areas ?? []).first(where: { ls.contains($0.name) }) else { t.areaID = nil; t.sub = nil; return }
@@ -83,6 +93,18 @@ struct SystemSettings: View {
             Dropdown("System", selection: Binding(get: { store.data.prefs.system ?? .gps }, set: { store.data.prefs.system = $0; Nav.shared.taskView = .all($0 == .classes) }), options: AppSystem.allCases.map { Opt($0.rawValue, $0) })
         } footer: {
             Text((store.data.prefs.system ?? .gps) == .gps ? "Tasks hang off your goals." : "Tasks live in classes, sub-projects or projects, and sync to Todoist as labels.").font(.caption).foregroundStyle(.secondary)
+        }
+        Section {
+            let p = $store.data.prefs
+            Dropdown("Group tasks by", selection: Binding(get: { p.wrappedValue.defaultGroup }, set: { p.wrappedValue.defaultGroup = $0; Nav.shared.taskView = .all(store.data.prefs.system == .classes) }),
+                     options: [Opt("Mode default", TaskGrouping?.none)] + TaskGrouping.allCases.map { Opt($0.rawValue, $0) })
+            Dropdown("Sort tasks by", selection: Binding(get: { p.wrappedValue.defaultSort ?? .due }, set: { p.wrappedValue.defaultSort = $0; Nav.shared.taskView = .all(store.data.prefs.system == .classes) }), options: TaskSort.allCases.map { Opt($0.rawValue, $0) })
+            Stepper("Time blocks: \(p.wrappedValue.blockLength) min", value: Binding(get: { p.wrappedValue.blockLength }, set: { p.wrappedValue.blockMinutes = $0 }), in: 15...240, step: 15)
+            Stepper("Day starts: \(p.wrappedValue.dayStart ?? 9):00", value: Binding(get: { p.wrappedValue.dayStart ?? 9 }, set: { p.wrappedValue.dayStart = $0 }), in: 0...(p.wrappedValue.dayEnd ?? 19) - 1)
+            Stepper("Day ends: \(p.wrappedValue.dayEnd ?? 19):00", value: Binding(get: { p.wrappedValue.dayEnd ?? 19 }, set: { p.wrappedValue.dayEnd = $0 }), in: (p.wrappedValue.dayStart ?? 9) + 1...24)
+            Toggle("Tag Todoist tasks with class and project", isOn: Binding(get: { p.wrappedValue.labelSync ?? true }, set: { p.wrappedValue.labelSync = $0 }))
+        } header: { Text("Preferences") } footer: {
+            Text("Link a class or project to a goal (right-click it in the sidebar) and its tasks show under that goal in GPS mode too.").font(.caption).foregroundStyle(.secondary)
         }
     }
 }
