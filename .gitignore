@@ -7,3 +7,4 @@ graphify-out/
 .env.local
 .posthog-wizard-cache/
 posthog-ai-observability-report.md
+web/node_modules/
