@@ -225,6 +225,7 @@ struct ViewOptions: View {
                 Button("Delete View", role: .destructive) { store.data.views?.removeAll { $0.id == v.id }; v = .all(custom) }
             }
         } label: { Image(systemName: "line.3.horizontal.decrease").font(.system(size: 12, weight: .medium)) }
+        .toggleStyle(.automatic)   // the app-wide SwitchToggle can't draw in a menu: greys out the Pickers and Toggle, adds a blank row
         .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize().help("View options").accessibilityLabel("View options")
         .alert("Name this view", isPresented: $naming) {
             TextField("Name", text: $name)

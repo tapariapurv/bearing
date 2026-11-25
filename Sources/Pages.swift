@@ -665,6 +665,7 @@ struct BlockView: View {
             ForEach([Energy.energizing, .draining], id: \.self) { e in
                 Toggle(e.rawValue.capitalized, isOn: Binding(get: { block.energy == e }, set: { var b = block; b.energy = $0 ? e : nil; store.updateBlock(b) }))
                     .keyboardShortcut(KeyEquivalent(e == .energizing ? "e" : "d"), modifiers: [])
+                    .toggleStyle(.automatic)   // menus can't draw the app-wide SwitchToggle
             }
             Divider()
             Button("Delete", role: .destructive) { store.deleteBlock(block) }

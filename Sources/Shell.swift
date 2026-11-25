@@ -266,12 +266,12 @@ struct TasksPanel: View {
                 if b.sub == nil {
                     Picker("Goal", selection: Binding(get: { area.goal }, set: { store.link(area: area.id, goal: $0) })) {
                         Text("None").tag(UUID?.none); ForEach(store.goals) { Text($0.title).tag(UUID?.some($0.id)) }
-                    }
+                    }.toggleStyle(.automatic)
                 }
                 if b.sub == nil {
                     Picker("Color", selection: Binding(get: { area.color ?? Int(area.id.uuid.0) % 8 }, set: { c in store.editArea(area.id) { $0.color = c } })) {
                         ForEach(0..<8, id: \.self) { Text(goalColorNames[$0]).tag($0) }
-                    }
+                    }.toggleStyle(.automatic)
                 }
                 Button("Manage Classes and Projects…") { Nav.shared.page = .projects }
                 Button("Delete \(b.sub ?? area.name)", role: .destructive) {
