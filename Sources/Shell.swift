@@ -55,7 +55,7 @@ struct Shell: View {
                     TopActions()
                 }.padding(.leading, 76)
                 ModeSwitch()
-            }.frame(height: 30).padding(.top, 0)   // centered on the traffic lights
+            }.frame(height: 52)   // matches the unified titlebar, so it centers on the traffic lights
             HStack(spacing: 18) {
                 if nav.showTasks { TasksPanel().frame(width: 288).panel() }
                 PageView(page: nav.page).id(nav.page).transition(.opacity.combined(with: .offset(y: 6))).frame(maxWidth: .infinity, maxHeight: .infinity).panel()
@@ -66,8 +66,27 @@ struct Shell: View {
         .padding([.horizontal, .bottom], 18)
         .background(Color.chrome)
         .ignoresSafeArea(edges: .top)
+        #if os(macOS)
+        .background(TallTitlebar())
+        #endif
     }
 }
+
+#if os(macOS)
+/// An empty unified toolbar makes the titlebar 52pt and lets macOS center the traffic lights in it.
+struct TallTitlebar: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let v = NSView()
+        DispatchQueue.main.async {
+            guard let w = v.window, w.toolbar == nil else { return }
+            w.toolbar = NSToolbar(); w.toolbarStyle = .unified
+            w.titlebarAppearsTransparent = true; w.titleVisibility = .hidden
+        }
+        return v
+    }
+    func updateNSView(_ v: NSView, context: Context) {}
+}
+#endif
 
 /// Day, Week, Goals and Focus: icons, with the selected one labelled in a raised pill.
 struct ModeSwitch: View {
