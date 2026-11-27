@@ -19,6 +19,10 @@ Bearing is an independent project inspired by the goal-to-calendar workflow of p
 - **Journal and Capture:** daily prompts, plus voice brain dumps of up to 90 minutes transcribed on your Mac. You can paste or import notes from tools like Wispr Flow.
 - **Insights:** focus time by goal, session quality and recent sessions.
 
+## Connect AI agents
+
+Any MCP client can use Bearing, including Claude, ChatGPT, Codex, Gemini, Cursor and Grok, through a local server or a hosted one. Turn it on in Settings › Agents. Setup for each app is in [MCP.md](MCP.md).
+
 ## Install
 
 Bearing needs macOS 26 or later on Apple Silicon.
