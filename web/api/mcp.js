@@ -44,7 +44,8 @@ export async function save(email, data, updateTime) {
   if (!r.ok) throw Object.assign(new Error(r.status === 400 || r.status === 409 || r.status === 412 ? 'Bearing changed at the same moment; try again.' : `Save failed (${r.status})`), { status: r.status })
 }
 export async function account(req, field = 'agentKey') { // webKey authorizes Bearing AI, agentKey agents
-  const m = /^Bearer bk_([A-Za-z0-9_-]+)_([a-f0-9]{64})$/.exec(req.headers.authorization || '')
+  // A header for clients that send one; ?key= for clients that only take a URL (ChatGPT, Gemini and other connector UIs).
+  const m = /^Bearer bk_([A-Za-z0-9_-]+)_([a-f0-9]{64})$/.exec(req.headers.authorization || (req.query?.key ? `Bearer ${req.query.key}` : ''))
   if (!m) return null
   const email = Buffer.from(m[1], 'base64url').toString(), doc = await load(email), key = doc?.data.prefs[field] || ''
   if (key.length !== 64 || !crypto.timingSafeEqual(Buffer.from(key), Buffer.from(m[2]))) return null
@@ -69,7 +70,7 @@ export const TOOLS = [
   T('write_journal', 'write', 'Add to (or replace) a day\'s journal entry.', { text: s('Text'), date: s('YYYY-MM-DD, default today'), replace: { type: 'boolean' } }, ['text']),
   T('update_task', 'edit', 'Change a task. Only the fields you pass change; an empty string clears due, area, goal or sub_project.', { id: s('Task id'), title: s(''), area: s(''), sub_project: s(''), goal: s(''), due: s('YYYY-MM-DD'), priority: { type: 'integer' }, notes: s(''), add_resources: { type: 'array', items: { type: 'string' } } }, ['id']),
   T('complete_task', 'edit', 'Mark a task done (or not done with done=false).', { id: s('Task id'), done: { type: 'boolean' } }, ['id']),
-  T('update_area', 'edit', 'Rename a class or project, switch its kind, or link it to a goal (empty goal unlinks).', { name: s('Current name'), new_name: s(''), kind: { type: 'string', enum: ['class', 'project'] }, goal: s('Goal title'), icon: s('Emoji, empty clears'), color: s('Hex like #3FAE86'), status: { type: 'string', enum: ['priority', 'active', 'done', 'archived'] } }, ['name']),
+  T('update_area', 'edit', 'Rename a class or project, switch its kind, or link it to a goal (empty goal unlinks).', { name: s('Current name'), new_name: s(''), kind: { type: 'string', enum: ['class', 'project'] }, goal: s('Goal title'), icon: s('SF Symbol name like book or graduationcap, empty clears'), color: s('Hex like #3FAE86'), status: { type: 'string', enum: ['priority', 'active', 'done', 'archived'] } }, ['name']),
   T('update_goal', 'edit', 'Change a goal\'s fields.', { title: s('Current title'), new_title: s(''), why: s(''), metric: s(''), notes: s('Next actions'), status: { type: 'string', enum: ['none', 'onTrack', 'adjust', 'offTrack'] }, weekly_hours: { type: 'number' } }, ['title']),
   T('delete_task', 'delete', 'Delete a task.', { id: s('Task id') }, ['id']),
   T('delete_area', 'delete', 'Remove a class or project. Its tasks stay, unsorted.', { name: s('Class or project name') }, ['name']),
@@ -189,30 +190,48 @@ function link(d, x, gid) { // same as Store.link(area:goal:): set the link and f
   if (gid) for (const t of d.tasks) if (t.areaID === x.id && !t.goalID) t.goalID = gid
 }
 
-export default async function handler(req, res) {
-  res.setHeader('access-control-allow-origin', '*'); res.setHeader('access-control-allow-headers', 'authorization, content-type, mcp-session-id, mcp-protocol-version')
-  if (req.method === 'OPTIONS') return res.status(204).end()
-  if (req.method !== 'POST') return res.status(405).json({ error: 'POST JSON-RPC to this URL' })
-  const m = req.body || {}, ok = result => res.json({ jsonrpc: '2.0', id: m.id, result }), err = (code, message) => res.json({ jsonrpc: '2.0', id: m.id ?? null, error: { code, message } })
-  if (m.id === undefined) return res.status(202).end() // notifications need no answer, so skip the Firestore read
-  const acct = await account(req).catch(() => null)
-  if (!acct) return res.status(401).json({ jsonrpc: '2.0', id: m.id ?? null, error: { code: -32001, message: 'Bad token. Copy it from Bearing › Settings › Agents › Remote.' } })
-  const d = acct.data, allowed = t => C.mode(d, t.scope) !== 'off'
+const VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05']
+// One JSON-RPC message in, one response out (or null for notifications and client responses).
+async function answer(m, d, acct) {
+  if (!m || typeof m !== 'object' || m.jsonrpc !== '2.0' || typeof m.method !== 'string') return m?.id === undefined ? null : { jsonrpc: '2.0', id: m.id ?? null, error: { code: -32600, message: 'Invalid request' } }
+  if (m.id === undefined) return null
+  const ok = result => ({ jsonrpc: '2.0', id: m.id, result }), allowed = t => C.mode(d, t.scope) !== 'off'
   switch (m.method) {
-    case 'initialize': return ok({ protocolVersion: m.params?.protocolVersion || '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'bearing', version: '1.9.0' },
+    case 'initialize': return ok({ protocolVersion: VERSIONS.includes(m.params?.protocolVersion) ? m.params.protocolVersion : VERSIONS[0], capabilities: { tools: { listChanged: false } }, serverInfo: { name: 'bearing', title: 'Bearing', version: '2.3.0' },
       instructions: 'Bearing is a planner: season goals, classes (with sub-projects) and projects, tasks, time blocks, focus sessions and a journal. Call get_overview first for names.' })
     case 'ping': return ok({})
-    case 'tools/list': return ok({ tools: TOOLS.filter(allowed).map(({ scope, ...t }) => t) })
+    case 'tools/list': return ok({ tools: TOOLS.filter(allowed).map(({ scope, ...t }) => ({ ...t, annotations: { readOnlyHint: scope === 'read', destructiveHint: false } })) })
     case 'tools/call': {
       const t = TOOLS.find(t => t.name === m.params?.name), reply = (text, isError = false) => ok({ content: [{ type: 'text', text }], isError })
       if (!t) return reply(`Unknown tool ${m.params?.name}`, true)
       if (!allowed(t)) return reply(`The user allows ${t.scope} only after asking, or not at all. Ask them to set ${t.scope} to Allow in Bearing › Settings › Agents.`, true)
       try {
         const out = run(d, t.name, m.params.arguments || {})
-        if (t.scope !== 'read') await save(acct.email, d, acct.updateTime)
+        if (t.scope !== 'read') { await save(acct.email, d, acct.updateTime); Object.assign(acct, await load(acct.email)) } // fresh updateTime for the next write in a batch
         return reply(typeof out === 'string' ? out : JSON.stringify(out))
       } catch (e) { return reply(e.message, true) }
     }
+    case 'resources/list': return ok({ resources: [] })
+    case 'prompts/list': return ok({ prompts: [] })
   }
-  return err(-32601, `Unknown method ${m.method}`)
+  return { jsonrpc: '2.0', id: m.id, error: { code: -32601, message: `Unknown method ${m.method}` } }
+}
+
+// Streamable HTTP MCP (stateless, JSON responses). Works with any MCP client: Claude, ChatGPT, Codex, Gemini, Cursor, Grok and others.
+export default async function handler(req, res) {
+  res.setHeader('access-control-allow-origin', '*'); res.setHeader('access-control-allow-methods', 'POST, GET, OPTIONS')
+  res.setHeader('access-control-allow-headers', 'authorization, content-type, accept, mcp-session-id, mcp-protocol-version, last-event-id'); res.setHeader('access-control-expose-headers', 'mcp-session-id, www-authenticate')
+  if (req.method === 'OPTIONS') return res.status(204).end()
+  if (req.method !== 'POST') return res.setHeader('allow', 'POST, OPTIONS').status(405).json({ error: 'POST JSON-RPC to this URL. No SSE stream is offered.' })
+  let body = req.body
+  if (typeof body === 'string') try { body = JSON.parse(body) } catch { return res.status(400).json({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } }) }
+  const batch = Array.isArray(body), msgs = batch ? body : [body]
+  if (msgs.every(m => m?.id === undefined)) return res.status(202).end() // notifications need no answer, so skip the Firestore read
+  const acct = await account(req).catch(() => null)
+  if (!acct) return res.setHeader('www-authenticate', 'Bearer realm="bearing", error="invalid_token"').status(401)
+    .json({ jsonrpc: '2.0', id: msgs.find(m => m?.id !== undefined)?.id ?? null, error: { code: -32001, message: 'Bad token. Copy it from Bearing › Settings › Agents › Remote.' } })
+  const out = []
+  for (const m of msgs) { const r = await answer(m, acct.data, acct); if (r) out.push(r) }
+  if (!out.length) return res.status(202).end()
+  res.json(batch ? out : out[0])
 }
