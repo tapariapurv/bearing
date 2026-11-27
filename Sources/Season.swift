@@ -194,10 +194,10 @@ struct SeasonSetup: View {
                             TextField("Goal", text: $g.title).textFieldStyle(.plain).font(.body.weight(.medium))
                             Segments(selection: $g.tier, options: GoalTier.allCases.map { Opt($0 == .support ? "Support" : $0.rawValue, $0) }).fixedSize()
                             VStack(spacing: 0) {
-                                Button { move(g.id, -1) } label: { Image(systemName: "chevron.up").frame(width: 18, height: 12) }.accessibilityLabel("Move \(g.title) up")
-                                Button { move(g.id, 1) } label: { Image(systemName: "chevron.down").frame(width: 18, height: 12) }.accessibilityLabel("Move \(g.title) down")
+                                Button { move(g.id, -1) } label: { Image(systemName: "chevron.up").frame(width: 18, height: 12) }.hint("Move up").accessibilityLabel("Move \(g.title) up")
+                                Button { move(g.id, 1) } label: { Image(systemName: "chevron.down").frame(width: 18, height: 12) }.hint("Move down").accessibilityLabel("Move \(g.title) down")
                             }.buttonStyle(.plain).font(.caption2.weight(.bold)).foregroundStyle(.secondary)
-                            Button { goals.removeAll { $0.id == g.id } } label: { Image(systemName: "xmark") }.buttonStyle(.plain).foregroundStyle(.secondary).accessibilityLabel("Remove \(g.title)")
+                            Button { goals.removeAll { $0.id == g.id } } label: { Image(systemName: "xmark") }.buttonStyle(.plain).foregroundStyle(.secondary).hint("Remove", does: "Remove goal").accessibilityLabel("Remove \(g.title)")
                         }
                         .padding(.horizontal, 12).padding(.vertical, 8).surface(12)
                     }

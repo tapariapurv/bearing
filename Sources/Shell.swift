@@ -14,17 +14,34 @@ extension View {
             .shadow(color: .black.opacity(0.04), radius: 14, y: 4)
     }
 }
+enum HintScope: String, Codable, CaseIterable { case everything = "Everything", important = "Important stuff", nothing = "Nothing" }
+enum HintStyle: String, Codable, CaseIterable { case name = "Just its name", action = "What it does" }
+extension View {
+    /// Hover preview, per Settings › Hover previews: the name, or what it does in 2–3 words.
+    func hint(_ name: String, does: String? = nil, important: Bool = false) -> some View { modifier(Hint(name: name, does: does, important: important)) }
+}
+private struct Hint: ViewModifier {
+    let name: String, does: String?, important: Bool
+    @State private var store = Store.shared
+    func body(content: Content) -> some View {
+        let p = store.data.prefs, scope = p.hoverHints == false ? .nothing : p.hintScope ?? .everything
+        let show = scope == .everything || (scope == .important && important)
+        content.help(show ? (p.hintStyle == .action ? does ?? name : name) : "")
+    }
+}
+
 /// A borderless round icon button, the toolbar and panel headers' only control.
 struct IconButton: View {
     let icon: String, label: String
     var on = false
+    var does: String? = nil, important = false
     let action: () -> Void
     @State private var hover = false
     var body: some View {
         Button(action: action) {
             Image(systemName: icon).font(.system(size: 13, weight: .medium)).foregroundStyle(on ? Color.primary : .secondary)
                 .frame(width: 28, height: 28).background(Color.primary.opacity(on ? 0.1 : hover ? 0.06 : 0), in: .circle).contentShape(.circle)
-        }.buttonStyle(.plain).onHover { hover = $0 }.help(label).accessibilityLabel(label)
+        }.buttonStyle(.plain).onHover { hover = $0 }.hint(label, does: does, important: important).accessibilityLabel(label)
     }
 }
 
@@ -44,18 +61,12 @@ struct Shell: View {
     @State private var nav = Nav.shared
     var body: some View {
         VStack(spacing: 12) {
+            #if os(iOS)
             ZStack {
-                Color.clear.contentShape(.rect)
-                #if os(macOS)
-                    .gesture(WindowDragGesture())
-                #endif
-                HStack(spacing: 6) {
-                    IconButton(icon: "sidebar.left", label: nav.showTasks ? "Hide tasks" : "Show tasks", on: !nav.showTasks) { nav.showTasks.toggle() }
-                    Spacer()
-                    TopActions()
-                }.padding(.leading, 76)
+                HStack(spacing: 6) { sidebarButton; Spacer(); TopActions() }
                 ModeSwitch()
-            }.frame(height: 52)   // matches the unified titlebar, so it centers on the traffic lights
+            }.frame(height: 30)
+            #endif
             HStack(spacing: 18) {
                 if nav.showTasks { TasksPanel().frame(width: 288).panel() }
                 PageView(page: nav.page).id(nav.page).transition(.opacity.combined(with: .offset(y: 6))).frame(maxWidth: .infinity, maxHeight: .infinity).panel()
@@ -64,29 +75,26 @@ struct Shell: View {
             }.animation(.easeOut(duration: 0.2), value: nav.page).animation(.easeOut(duration: 0.2), value: nav.side).animation(.easeOut(duration: 0.2), value: nav.showTasks)
         }
         .padding([.horizontal, .bottom], 18)
+        #if os(macOS)
+        // A real toolbar: macOS handles clicks, hovers, window dragging and centering the traffic lights.
+        .padding(.top, 4)
+        .background(Color.chrome.ignoresSafeArea())
+        .toolbar {
+            ToolbarItem(placement: .navigation) { sidebarButton }.sharedBackgroundVisibility(.hidden)
+            ToolbarItem(placement: .principal) { ModeSwitch() }.sharedBackgroundVisibility(.hidden)
+            ToolbarItem(placement: .primaryAction) { TopActions() }.sharedBackgroundVisibility(.hidden)
+        }
+        .toolbar(removing: .title)
+        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+        #else
         .background(Color.chrome)
         .ignoresSafeArea(edges: .top)
-        #if os(macOS)
-        .background(TallTitlebar())
         #endif
     }
-}
-
-#if os(macOS)
-/// An empty unified toolbar makes the titlebar 52pt and lets macOS center the traffic lights in it.
-struct TallTitlebar: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView {
-        let v = NSView()
-        DispatchQueue.main.async {
-            guard let w = v.window, w.toolbar == nil else { return }
-            w.toolbar = NSToolbar(); w.toolbarStyle = .unified
-            w.titlebarAppearsTransparent = true; w.titleVisibility = .hidden
-        }
-        return v
+    private var sidebarButton: some View {
+        IconButton(icon: "sidebar.left", label: nav.showTasks ? "Hide tasks" : "Show tasks", on: !nav.showTasks, does: "Toggle task list", important: true) { nav.showTasks.toggle() }
     }
-    func updateNSView(_ v: NSView, context: Context) {}
 }
-#endif
 
 /// Day, Week, Goals and Focus: icons, with the selected one labelled in a raised pill.
 struct ModeSwitch: View {
@@ -104,7 +112,7 @@ struct ModeSwitch: View {
                         .padding(.horizontal, 11).frame(height: 26)
                         .background { if on { Capsule().fill(Color.surface).shadow(color: .black.opacity(0.08), radius: 2, y: 1).matchedGeometryEffect(id: "pill", in: pill) } }
                         .contentShape(.capsule)
-                }.buttonStyle(.plain).help(m.title).accessibilityLabel(m.title).accessibilityAddTraits(on ? .isSelected : [])
+                }.buttonStyle(.plain).hint(m.title, does: "Open \(m.title) view", important: true).accessibilityLabel(m.title).accessibilityAddTraits(on ? .isSelected : [])
             }
         }
         .padding(3).background(Color.primary.opacity(0.06), in: .capsule)
@@ -117,13 +125,13 @@ struct TopActions: View {
     @State private var store = Store.shared
     var body: some View {
         HStack(spacing: 4) {
-            IconButton(icon: "arrow.clockwise", label: "Sync calendars and tasks") {
+            IconButton(icon: "arrow.clockwise", label: "Sync", does: "Refresh calendars, tasks", important: true) {
                 Todoist.shared.nudge(); Task { await GoogleCalendar.shared.sync() }
             }
-            IconButton(icon: "chart.bar", label: "Insights", on: nav.page == .insights) { nav.page = .insights }
-            IconButton(icon: "book", label: "Journal", on: nav.page == .journal) { nav.page = .journal }
-            IconButton(icon: "waveform", label: "Capture", on: nav.page == .capture) { nav.page = .capture }
-            IconButton(icon: "bubble.left", label: "Coach", on: nav.side) { nav.side.toggle() }
+            IconButton(icon: "chart.bar", label: "Insights", on: nav.page == .insights, does: "See your stats", important: true) { nav.page = .insights }
+            IconButton(icon: "book", label: "Journal", on: nav.page == .journal, does: "Write reflections", important: true) { nav.page = .journal }
+            IconButton(icon: "waveform", label: "Capture", on: nav.page == .capture, does: "Record a thought", important: true) { nav.page = .capture }
+            IconButton(icon: "bubble.left", label: "Coach", on: nav.side, does: "Chat with coach", important: true) { nav.side.toggle() }
             ScoreRing(value: store.dayScore).padding(.horizontal, 4)
             Avatar()
         }
@@ -148,7 +156,7 @@ struct ScoreRing: View {
             Circle().trim(from: 0, to: CGFloat(value) / 100).stroke(Color.good, style: .init(lineWidth: 3, lineCap: .round)).rotationEffect(.degrees(-90))
             Text("\(value)").font(.system(size: 10, weight: .bold, design: .rounded)).monospacedDigit()
         }
-        .frame(width: 26, height: 26).help("Today: \(value)% of planned time focused").accessibilityLabel("Today's score \(value) percent")
+        .frame(width: 26, height: 26).hint("Today's score", does: "\(value)% of plan focused", important: true).accessibilityLabel("Today's score \(value) percent")
     }
 }
 
@@ -195,11 +203,11 @@ struct TasksPanel: View {
                     Menu {
                         ViewChips()
                     } label: { Label(nav.taskView.name, systemImage: nav.taskView.icon).font(.system(size: 17, weight: .semibold)).labelStyle(.titleAndIcon) }
-                        .menuStyle(.button).buttonStyle(.plain).fixedSize().help("Switch view")
+                        .menuStyle(.button).buttonStyle(.plain).fixedSize().hint("Switch view", does: "Change task view")
                     Spacer()
                     ViewOptions(v: $nav.taskView)
-                    IconButton(icon: "square.and.arrow.down", label: "Sync Todoist") { Todoist.shared.nudge() }
-                    IconButton(icon: "list.bullet", label: "All tasks") { nav.page = .tasks }
+                    IconButton(icon: "square.and.arrow.down", label: "Sync Todoist", does: "Pull Todoist tasks") { Todoist.shared.nudge() }
+                    IconButton(icon: "list.bullet", label: "All tasks", does: "Open task list") { nav.page = .tasks }
                 }.padding(.bottom, 8)
                 if classic {
                     header("Season goals") { nav.seasonSetup = true }
@@ -243,7 +251,7 @@ struct TasksPanel: View {
         HStack {
             Text(t).font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary)
             Spacer()
-            IconButton(icon: "plus", label: "New season", action: add)
+            IconButton(icon: "plus", label: "New season", does: "Start a season", action: add)
         }
     }
     @ViewBuilder private func group(_ b: TaskBucket) -> some View {
@@ -295,7 +303,7 @@ struct TasksPanel: View {
     private func taskRow(_ t: TaskItem) -> some View {
         let b = store.data.blocks.first { $0.taskID == t.id && $0.end > Date() }
         return HStack(spacing: 8) {
-            Button { store.toggleDone(t) } label: { Image(systemName: "circle").font(.system(size: 14)).foregroundStyle(.tertiary) }
+            Button { store.toggleDone(t) } label: { Image(systemName: "circle").font(.system(size: 14)).foregroundStyle(.tertiary) }.hint("Complete", does: "Mark task done")
                 .buttonStyle(.plain).accessibilityLabel("Complete \(t.title)")
             Text(t.title).font(.system(size: 13)).lineLimit(2)
             Spacer(minLength: 4)
@@ -448,7 +456,7 @@ struct BlockDetail: View {
                     Button("Edit…") { shown = false; editing = block }
                     Button("Delete", role: .destructive) { shown = false; store.deleteBlock(block) }
                 } label: { Image(systemName: "ellipsis").frame(width: 24, height: 24) }
-                    .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize().accessibilityLabel("More")
+                    .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize().hint("More", does: "Edit or delete").accessibilityLabel("More")
             }
             HStack(spacing: 10) {
                 Button { shown = false; Focus.shared.begin(title: block.title, goal: block.goalID, task: block.taskID); Nav.shared.page = .focus } label: {

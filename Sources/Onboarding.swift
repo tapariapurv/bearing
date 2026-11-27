@@ -289,7 +289,7 @@ private struct CoachStep: View {
                         TextField("Reply to your coach", text: $input).textFieldStyle(.plain).padding(.horizontal, 14).frame(height: 40)
                             .background(Color.primary.opacity(0.05), in: .capsule).onSubmit { send(input) }
                         Button { send(input) } label: { Image(systemName: "arrow.up").font(.body.weight(.bold)).frame(width: 40, height: 40).foregroundStyle(Color.onBrand).background(Color.brand, in: .circle) }
-                            .buttonStyle(.plain).disabled(input.trimmingCharacters(in: .whitespaces).isEmpty || thinking)
+                            .buttonStyle(.plain).hint("Send", does: "Send your answer").disabled(input.trimmingCharacters(in: .whitespaces).isEmpty || thinking)
                     }
                 }
                 if !error.isEmpty { Text(error).font(.caption).foregroundStyle(.secondary) }

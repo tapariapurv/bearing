@@ -39,6 +39,8 @@ import AppKit
     func bearer(_ key: String?) -> String? { Web.bearer(key) }
     static func newKey() -> String { Web.newKey() }
     func newRemoteKey() { Store.shared.data.prefs.agentKey = Self.newKey(); Task { await Sync.push() } }
+    /// For clients that take only a URL (ChatGPT, Gemini, Grok and other connector screens).
+    var remoteLink: String { "\(Self.remoteURL)?key=\(remoteToken ?? "")" }
     var remoteCommand: String { "claude mcp add --transport http bearing \(Self.remoteURL) --header \"Authorization: Bearer \(remoteToken ?? "")\"" }
 
     func start() {
@@ -112,8 +114,8 @@ import AppKit
         Tool(name: "get_focus_stats", scope: "read", about: "Focus sessions: hours, count, quality and distractions, per goal.", props: ["days": ["type": "integer", "description": "Look back this many days, default 7"]], required: []),
         Tool(name: "search", scope: "read", about: "Search tasks, goals, classes, projects and the journal.", props: ["query": s("Words to find")], required: ["query"]),
         Tool(name: "write_journal", scope: "write", about: "Add to (or replace) a day's journal entry.", props: ["text": s("Text"), "date": s("YYYY-MM-DD, default today"), "replace": ["type": "boolean"]], required: ["text"]),
-        Tool(name: "update_area", scope: "edit", about: "Rename a class or project, switch its kind, link it to a goal (empty goal unlinks), set its emoji icon or hex color, or move it between priority, active, done and archived.", props: ["name": s("Current name"), "new_name": s(""), "kind": ["type": "string", "enum": ["class", "project"]], "goal": s("Goal title"),
-            "icon": s("One emoji"), "color": s("Hex like #3FAE86"), "status": ["type": "string", "enum": ["priority", "active", "done", "archived"]]], required: ["name"]),
+        Tool(name: "update_area", scope: "edit", about: "Rename a class or project, switch its kind, link it to a goal (empty goal unlinks), set its icon (an SF Symbol name like book or graduationcap) or hex color, or move it between priority, active, done and archived.", props: ["name": s("Current name"), "new_name": s(""), "kind": ["type": "string", "enum": ["class", "project"]], "goal": s("Goal title"),
+            "icon": s("SF Symbol name, empty clears"), "color": s("Hex like #3FAE86"), "status": ["type": "string", "enum": ["priority", "active", "done", "archived"]]], required: ["name"]),
         Tool(name: "update_goal", scope: "edit", about: "Change a goal's fields.", props: ["title": s("Current title"), "new_title": s(""), "why": s(""), "metric": s(""), "notes": s("Next actions"),
             "status": ["type": "string", "enum": ["none", "onTrack", "adjust", "offTrack"]], "weekly_hours": ["type": "number"]], required: ["title"]),
         Tool(name: "delete_block", scope: "delete", about: "Remove a time block.", props: ["id": s("Block id from get_schedule")], required: ["id"]),
@@ -251,7 +253,7 @@ import AppKit
             let x = try area(str("name") ?? ""), i = st.data.areas!.firstIndex { $0.id == x.id }!
             if let n = str("new_name"), !n.isEmpty { st.renameArea(x.id, to: n) }
             if let k = str("kind") { st.data.areas![i].isClass = k != "project"; if k == "project" { st.data.areas![i].subs = nil }; st.relabel(st.data.tasks.filter { $0.areaID == x.id }.map(\.id)) }
-            if let e = str("icon") { st.data.areas![i].icon = e.isEmpty ? nil : String(e.prefix(2)) }
+            if let e = str("icon"), e.isEmpty || Symbols.exists(e) { st.data.areas![i].icon = e.isEmpty ? nil : e }
             if let c = str("color") { guard c.isEmpty || Color(hex: c) != nil else { throw Fail(description: "Color must be a hex like #3FAE86") }; st.data.areas![i].hex = c.isEmpty ? nil : c.uppercased() }
             if let v = str("status") { st.data.areas![i].priority = v == "priority" ? true : nil; st.data.areas![i].done = v == "done" ? true : nil; st.data.areas![i].archived = v == "archived" ? true : nil }
             if let g = str("goal") { st.link(area: x.id, goal: g.isEmpty ? nil : try goal(g).id) }
@@ -337,20 +339,21 @@ struct AgentSettings: View {
                     Button(copied ? "Copied" : "Copy Claude Code Command") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(a.command, forType: .string); copied = true }
                     Button("Copy Token") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(a.token, forType: .string) }
                     Spacer()
-                    Button("New Token", role: .destructive) { a.rotate(); copied = false }.help("Disconnects every agent using the old token")
+                    Button("New Token", role: .destructive) { a.rotate(); copied = false }.hint("New Token", does: "Disconnect old agents")
                 }
             }
             Section {
                 if let t = a.remoteToken {
                     Text(a.remoteCommand).font(.system(.caption, design: .monospaced)).textSelection(.enabled).lineLimit(3)
                     HStack {
-                        Button("Copy Remote Command") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(a.remoteCommand, forType: .string) }
+                        Button("Copy Link") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(a.remoteLink, forType: .string) }.hint("Copy Link", does: "URL with the key, for apps that only take a URL")
+                        Button("Copy Claude Code Command") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(a.remoteCommand, forType: .string) }
                         Button("Copy URL and Token") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString("\(Agents.remoteURL)\nAuthorization: Bearer \(t)", forType: .string) }
                         Spacer()
                         Button("Turn Off", role: .destructive) { Store.shared.data.prefs.agentKey = nil; Task { await Sync.push() } }
                     }
                 } else { Button("Turn On Remote Access") { a.newRemoteKey() }.disabled(Store.shared.data.prefs.profile?.email == nil) }
-            } header: { Text("Remote") } footer: { Text("A hosted MCP server any device or server can reach. It follows the same permissions; \"Ask each time\" counts as Off there.").font(.caption).foregroundStyle(.secondary) }
+            } header: { Text("Remote") } footer: { Text("A hosted MCP server (Streamable HTTP) for any MCP client: Claude, ChatGPT, Codex, Gemini, Cursor, Grok and more. Use the URL and token, or the link when an app only takes a URL. Keep the link private: it works like the token. It follows the same permissions; \"Ask each time\" counts as Allow there, since nobody is around to ask.").font(.caption).foregroundStyle(.secondary) }
             Section("Activity") {
                 if a.log.isEmpty { Text("No agent requests yet.").foregroundStyle(.secondary) }
                 ForEach(a.log.prefix(20)) { e in

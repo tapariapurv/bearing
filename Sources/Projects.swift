@@ -1,14 +1,14 @@
 import SwiftUI
 
-/// A class or project's emoji, or a folder/cap symbol, on its color.
+/// A class or project's symbol (or a legacy emoji), else a folder/cap symbol, on its color.
 struct AreaIcon: View {
     let area: Area
     var size: CGFloat = 28
     var sub = false
     var body: some View {
         Group {
-            if let e = area.icon, !e.isEmpty, !sub { Text(e).font(.system(size: size * 0.56)) }
-            else { Image(systemName: sub ? "folder" : area.isClass ? "graduationcap" : "folder").font(.system(size: size * 0.44, weight: .semibold)).foregroundStyle(area.tint.ink) }
+            if let e = area.icon, !e.isEmpty, !sub, !Symbols.isSymbol(e) { Text(e).font(.system(size: size * 0.56)) }
+            else { Image(systemName: sub ? "folder" : area.icon.flatMap { $0.isEmpty ? nil : $0 } ?? (area.isClass ? "graduationcap" : "folder")).font(.system(size: size * 0.44, weight: .semibold)).foregroundStyle(area.tint.ink) }
         }.frame(width: size, height: size).background(area.tint.wash, in: .rect(cornerRadius: size * 0.3))
     }
 }
@@ -64,7 +64,7 @@ private struct ProjectRow: View {
         let a = area, tasks = store.data.tasks.filter { $0.areaID == a.id }, openCount = tasks.filter { !$0.done }.count
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 12) {
-                Button { styling = true } label: { AreaIcon(area: a, size: 32) }.buttonStyle(.plain).help("Icon and color")
+                Button { styling = true } label: { AreaIcon(area: a, size: 32) }.buttonStyle(.plain).hint("Icon and color", does: "Change icon, color")
                     .popover(isPresented: $styling, arrowEdge: .bottom) { StylePicker(area: a) }
                 if let n = name {
                     TextField("Name", text: Binding(get: { n }, set: { name = $0 })).textFieldStyle(.plain).font(.system(size: 14, weight: .semibold))
@@ -72,7 +72,7 @@ private struct ProjectRow: View {
                 } else {
                     Text(a.name).font(.system(size: 14, weight: .semibold)).lineLimit(1).strikethrough(a.done == true, color: .secondary)
                         .onTapGesture(count: 2) { name = a.name }
-                    IconButton(icon: "pencil", label: "Rename") { name = a.name }
+                    IconButton(icon: "pencil", label: "Rename", does: "Rename it") { name = a.name }
                 }
                 if a.archived == true { Text("Archived").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary) }
                 Spacer(minLength: 8)
@@ -82,7 +82,7 @@ private struct ProjectRow: View {
                 Dropdown("Goal", selection: Binding(get: { a.goal }, set: { store.link(area: a.id, goal: $0) }),
                          options: [Opt("No goal", UUID?.none)] + store.goals.map { Opt($0.title, UUID?.some($0.id), goalColor($0.color)) }).frame(width: 180)
                 if a.isClass {
-                    IconButton(icon: expanded ? "chevron.up" : "chevron.down", label: "Sub-projects", on: expanded) { withAnimation(.snappy(duration: 0.22)) { expanded.toggle() } }
+                    IconButton(icon: expanded ? "chevron.up" : "chevron.down", label: "Sub-projects", on: expanded, does: "Show sub-projects") { withAnimation(.snappy(duration: 0.22)) { expanded.toggle() } }
                 }
                 Menu {
                     Button(a.priority == true ? "Remove from Priority" : "Move to Priority") { store.editArea(a.id) { $0.priority = a.priority == true ? nil : true } }
@@ -90,14 +90,14 @@ private struct ProjectRow: View {
                     Button(a.archived == true ? "Unarchive" : "Archive") { store.editArea(a.id) { $0.archived = a.archived == true ? nil : true } }
                     Divider()
                     Button("Delete \(a.name)", role: .destructive) { store.deleteArea(a.id) }
-                } label: { Image(systemName: "ellipsis") }.menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                } label: { Image(systemName: "ellipsis") }.menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().hint("More", does: "More options")
             }
             if expanded && a.isClass {
                 FlowRow(spacing: 6) {
                     ForEach(a.subs ?? [], id: \.self) { s in
                         HStack(spacing: 5) {
                             Text(s); Text("\(tasks.filter { $0.sub == s && !$0.done }.count)").foregroundStyle(.secondary)
-                            Button { removeSub(s) } label: { Image(systemName: "xmark").font(.system(size: 9, weight: .bold)) }.buttonStyle(.plain).foregroundStyle(.secondary)
+                            Button { removeSub(s) } label: { Image(systemName: "xmark").font(.system(size: 9, weight: .bold)) }.buttonStyle(.plain).foregroundStyle(.secondary).hint("Remove", does: "Delete sub-project")
                         }.font(.system(size: 12, weight: .medium)).padding(.horizontal, 10).padding(.vertical, 5)
                         .background(a.tint.wash, in: .capsule).foregroundStyle(a.tint.ink)
                     }
@@ -124,7 +124,7 @@ private struct ProjectRow: View {
     }
 }
 
-/// Emoji library, palette swatches and any hex color.
+/// Symbol library, palette swatches and any hex color.
 private struct StylePicker: View {
     let area: Area
     @State private var store = Store.shared
@@ -138,22 +138,21 @@ private struct StylePicker: View {
                     Button { store.editArea(a.id) { $0.color = i; $0.hex = nil } } label: {
                         Circle().fill(goalPalette[i]).frame(width: 20, height: 20)
                             .overlay(Circle().stroke(Color.primary.opacity(a.hex == nil && a.color == i ? 0.8 : 0), lineWidth: 2).padding(-3))
-                    }.buttonStyle(.plain).help(goalColorNames[i])
+                    }.buttonStyle(.plain).hint(goalColorNames[i])
                 }
                 ColorPicker("", selection: Binding(get: { a.tint }, set: { c in store.editArea(a.id) { $0.hex = c.hexString } }), supportsOpacity: false).labelsHidden()
                 TextField("#3FAE86", text: $hex).textFieldStyle(.roundedBorder).frame(width: 84)
                     .onSubmit { if Color(hex: hex) != nil { store.editArea(a.id) { $0.hex = "#" + hex.replacingOccurrences(of: "#", with: "").uppercased() } } }
             }
             HStack {
-                TextField("Search icons, or type any emoji", text: $search).textFieldStyle(.roundedBorder)
-                    .onSubmit { if let e = search.first, e.unicodeScalars.first?.properties.isEmojiPresentation == true { set(String(e)) } }
+                TextField("Search icons", text: $search).textFieldStyle(.roundedBorder)
                 Button("None") { set(nil) }.buttonStyle(QuietButton())
             }
             ScrollView {
                 LazyVGrid(columns: Array(repeating: GridItem(.fixed(32), spacing: 4), count: 10), spacing: 4) {
-                    ForEach(Emoji.search(search), id: \.self) { e in
+                    ForEach(Symbols.search(search), id: \.self) { e in
                         Button { set(e) } label: {
-                            Text(e).font(.system(size: 20)).frame(width: 32, height: 32)
+                            Image(systemName: e).font(.system(size: 16)).foregroundStyle(a.tint.ink).frame(width: 32, height: 32)
                                 .background(a.icon == e ? a.tint.wash : .clear, in: .rect(cornerRadius: 8)).contentShape(.rect)
                         }.buttonStyle(.plain)
                     }
@@ -164,32 +163,58 @@ private struct StylePicker: View {
     private func set(_ e: String?) { store.editArea(area.id) { $0.icon = e } }
 }
 
-/// A searchable emoji library: keyword, then emoji.
-enum Emoji {
+/// A searchable SF Symbols library: keyword, then symbol names. Old emoji icons still show as text.
+enum Symbols {
     static let all: [(String, String)] = """
-    book 📚 📖 📘 📙 📗 📕 📓 📔 📒 📝 ✏️ 🖊️ 🖋️ ✒️ 🖍️ 📐 📏 🔖 🏷️ 📎|school 🎓 🏫 🧑‍🎓 🧑‍🏫 🎒 📋 🗂️ 📁 📂 🗃️|english 🔤 🔡 🅰️ 🗣️ 💬 🗨️ 📜 ✍️|language 🌐 🌍 🌎 🌏 🗺️ 🇬🇧 🇺🇸 🇪🇸 🇫🇷 🇩🇪 🇮🇳 🇯🇵 🇨🇳
-    math ➕ ➖ ✖️ ➗ 🟰 🔢 💯 📊 📈 📉 🧮 ♾️ π|science 🔬 🔭 🧪 🧫 🧬 ⚗️ 🧲 ⚛️ 🌡️ 🦠 🧠 🫀 🩺 💊|chess ♟️ ♞ ♜ ♛ ♚ 🎲 🧩 🃏 🎯 🎮 🕹️
-    code 💻 🖥️ ⌨️ 🖱️ 💾 💿 🧑‍💻 👨‍💻 👩‍💻 🐍 ☕ 🦀 🐛 🔧 🔨 🛠️ ⚙️ 🔩 🧰 🤖 🦾 🔌 🔋 💡 📡 🛰️
-    robotics 🤖 🦾 🦿 ⚙️ 🔩 🧲 🔋 🔌 🛠️|maker 🏗️ 🧱 🪚 🪛 🔧 🔨 ⚒️ 🪓 🧵 🪡 🧶 🎨 🖌️ 🖼️ ✂️
-    business 💼 🏢 🏦 💰 💵 💳 🪙 📈 💹 🧾 🤝 📇 📊 🛒 🛍️ 🏪 🏬|money 💰 💵 💴 💶 💷 🪙 💸 📈 🏦|stock 📈 📉 💹 🐂 🐻 💲
-    media 🎬 🎥 📹 📷 📸 📺 📻 🎙️ 🎧 🎤 🎼 🎵 🎶 🎹 🥁 🎸 🎻 🎺 🎷|youtube ▶️ 📺 🎬 🎥 🔴|design 🎨 🖌️ 🖍️ ✏️ 📐 🧵 🖼️ 💅 ✨
-    writing ✍️ 📝 🖋️ 📰 🗞️ 📃 📄 📑|news 📰 🗞️ 📣 📢 🔔 📬 📨 ✉️ 📧
-    sport ⚽ 🏀 🏈 ⚾ 🎾 🏐 🏉 🏓 🏸 🏒 🏑 🏏 ⛳ 🥊 🥋 🛹 ⛸️ 🎿 🏂 🏋️ 🤸 🧘 🚴 🏊 🏃 🧗 🏆 🥇 🏅
-    health 💪 🧘 🫁 🥗 🍎 🥦 💧 😴 🛌 ❤️ 🩹 🏥|food 🍕 🍔 🍜 🍣 🍩 🍪 ☕ 🍵 🧋 🍳 🥐 🍰
-    travel ✈️ 🚀 🚗 🚲 🚆 🛳️ 🗺️ 🧭 🏔️ 🏝️ 🏕️ 🌋 🗽 🗼|home 🏠 🏡 🛋️ 🪴 🧹 🧺 🔑 🚪
-    nature 🌱 🌿 🍀 🌳 🌲 🌵 🌸 🌻 🌼 🍁 🌊 🔥 ⭐ 🌙 ☀️ 🌈 ⚡ ❄️ 🌍|animal 🐶 🐱 🦊 🐻 🐼 🦁 🐯 🐸 🐵 🦉 🦅 🐝 🦋 🐢 🐙 🐬 🐳 🦄
-    spirit 🕉️ 🙏 🪷 📿 🛕 🕯️ ☮️ ☯️ 🧿|people 👤 👥 🧑 👪 🫂 🤝 👋 🙌 👏 🎉 🥳
-    goal 🎯 🏁 🚩 🏆 🥇 🔥 ⚡ 🚀 ⭐ 🌟 ✨ 💎 👑 🔑 🗝️ 🧭 ⏳ ⌛ ⏰ 📅 🗓️ ✅ ☑️ ✔️
-    symbol ❤️ 🧡 💛 💚 💙 🩵 🤍 🖤 🤎 🩶 🔴 🟠 🟡 🟢 🔵 🟤 ⚫ ⚪ 🟥 🟧 🟨 🟩 🟦 🟫 ⬛ ⬜ 🔶 🔷 🔺 🔻 💠 🔘 ♦️ ♠️ ♣️ ♥️
-    brand 🛍️ 🏷️ 🧢 👕 👗 👟 👜 💍 🕶️ 🪞 🧴 🧼|web 🌐 🔗 🖇️ 📲 📱 ☁️ 🔒 🔓 🔐 🛡️ 📶 🧩
-    """.split(whereSeparator: { $0 == "|" || $0 == "\n" }).flatMap { line -> [(String, String)] in
+    book book.closed books.vertical text.book.closed character.book.closed book.pages bookmark pencil pencil.and.outline highlighter paperclip ruler pencil.and.ruler tag doc.text note.text
+    school graduationcap studentdesk backpack building.columns list.clipboard folder tray.full archivebox
+    english character.book.closed textformat abc character text.quote quote.bubble bubble.left.and.bubble.right text.bubble
+    language globe globe.americas globe.europe.africa globe.asia.australia translate character.bubble map
+    math function sum x.squareroot percent plus.forwardslash.minus divide number chart.bar chart.pie chart.xyaxis.line infinity
+    science atom flask testtube.2 scope stethoscope brain lungs pills thermometer.medium waveform.path.ecg
+    chess crown checkerboard.rectangle puzzlepiece dice gamecontroller suit.spade suit.club target
+    code laptopcomputer desktopcomputer keyboard terminal chevron.left.forwardslash.chevron.right curlybraces cpu memorychip server.rack externaldrive ladybug hammer wrench.and.screwdriver gearshape gearshape.2 cable.connector antenna.radiowaves.left.and.right
+    robotics cpu gearshape.2 bolt battery.100 cable.connector wrench.and.screwdriver figure.walk.motion
+    maker hammer wrench screwdriver scissors paintbrush paintpalette ruler cube shippingbox printer
+    business briefcase building.2 bag cart creditcard banknote dollarsign.circle chart.line.uptrend.xyaxis person.2 storefront signature
+    money banknote dollarsign.circle indianrupeesign.circle creditcard wallet.bifold chart.line.uptrend.xyaxis building.columns
+    stock chart.line.uptrend.xyaxis chart.line.downtrend.xyaxis chart.bar.xaxis chart.pie arrow.up.right
+    media film video camera camera.aperture photo tv mic headphones music.note music.quarternote.3 guitars pianokeys radio waveform
+    youtube play.rectangle play.circle play.tv video film
+    design paintbrush paintpalette pencil.tip swatchpalette eyedropper wand.and.stars sparkles square.on.circle photo.artframe
+    writing pencil.line square.and.pencil doc.richtext newspaper text.alignleft signature scroll
+    news newspaper megaphone bell envelope tray mail.stack antenna.radiowaves.left.and.right
+    sport figure.run figure.walk sportscourt soccerball basketball football tennisball volleyball figure.pool.swim bicycle dumbbell trophy medal flag.checkered figure.yoga figure.climbing
+    health heart heart.text.square figure.mind.and.body leaf carrot drop bed.double cross.case pills
+    food fork.knife cup.and.saucer mug takeoutbag.and.cup.and.straw birthday.cake carrot frying.pan
+    travel airplane car bicycle tram ferry map mappin.and.ellipse location compass.drawing mountain.2 suitcase globe
+    home house sofa lamp.desk key door.left.hand.open washer bed.double
+    nature leaf tree camera.macro flame drop sun.max moon star cloud bolt snowflake globe.americas mountain.2 water.waves
+    animal pawprint dog cat bird fish tortoise hare ladybug ant lizard
+    spirit sparkles moon.stars hands.sparkles sun.horizon flame figure.mind.and.body
+    people person person.2 person.3 figure.2 hand.wave hands.clap party.popper face.smiling
+    goal target flag flag.checkered trophy star sparkles bolt flame paperplane crown diamond key hourglass alarm calendar checkmark.circle checkmark.seal
+    symbol heart circle square triangle diamond hexagon seal star app suit.heart suit.diamond bolt.heart
+    brand tag bag tshirt shoe eyeglasses crown sparkles
+    web globe link network icloud lock shield wifi iphone qrcode at
+    """.split(separator: "\n").flatMap { line -> [(String, String)] in
         let w = line.split(separator: " ").map(String.init); guard let k = w.first else { return [] }
         return w.dropFirst().map { (k, $0) }
     }
     static func search(_ q: String) -> [String] {
         let q = q.lowercased().trimmingCharacters(in: .whitespaces)
         var seen = Set<String>()
-        return all.filter { q.isEmpty || $0.0.hasPrefix(q) || $0.0.contains(q) }.map(\.1).filter { seen.insert($0).inserted }
+        return all.filter { q.isEmpty || $0.0.contains(q) || $0.1.contains(q) }.map(\.1).filter { seen.insert($0).inserted }
+    }
+    /// True for a symbol name, false for a legacy emoji.
+    static func isSymbol(_ s: String) -> Bool { s.unicodeScalars.allSatisfy { $0.isASCII } }
+    /// True when this OS has a symbol by that name.
+    static func exists(_ s: String) -> Bool {
+        #if os(macOS)
+        NSImage(systemSymbolName: s, accessibilityDescription: nil) != nil
+        #else
+        UIImage(systemName: s) != nil
+        #endif
     }
 }
 /// Wraps children onto new lines when they run out of width.

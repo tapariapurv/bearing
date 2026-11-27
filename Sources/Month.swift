@@ -32,7 +32,7 @@ struct MonthPage: View {
         Button { month = Calendar.current.date(byAdding: .month, value: by, to: month)! } label: {
             Image(systemName: icon).font(.system(size: 11, weight: .semibold)).frame(width: 28, height: 28)
                 .overlay(Circle().strokeBorder(Color.primary.opacity(0.12))).contentShape(.circle)
-        }.buttonStyle(.plain).accessibilityLabel(by < 0 ? "Previous month" : "Next month")
+        }.buttonStyle(.plain).hint(by < 0 ? "Previous month" : "Next month", important: true).accessibilityLabel(by < 0 ? "Previous month" : "Next month")
     }
     private func cell(_ d: Date, evs: [CalEvent]) -> some View {
         let end = d.adding(days: 1), today = Calendar.current.isDateInToday(d)

@@ -7,7 +7,7 @@ enum AppSystem: String, Codable, CaseIterable { case gps = "GPS: goals, plan, sy
 struct Area: Codable, Identifiable, Hashable {
     var id = UUID(); var name = ""; var isClass = true; var subs: [String]?; var goal: UUID?
     var color: Int?; var archived: Bool?; var notes: String?
-    var hex: String?; var icon: String?; var done: Bool?; var priority: Bool?   // icon: one emoji, the same on every device
+    var hex: String?; var icon: String?; var done: Bool?; var priority: Bool?   // icon: an SF Symbol name (older data: one emoji), the same on every device
     /// Its own hex color, else its palette color, else a stable one picked from its id.
     var tint: Color { hex.flatMap(Color.init(hex:)) ?? goalColor(color ?? Int(id.uuid.0)) }
     /// Neither done nor archived: shows in task lists, pickers and the coach.
@@ -114,6 +114,16 @@ struct SystemSettings: View {
         } header: { Text("Preferences") } footer: {
             Text("Link a class or project to a goal (right-click it in the sidebar) and its tasks show under that goal in GPS mode too.").font(.caption).foregroundStyle(.secondary)
         }
+        Section {
+            let p = $store.data.prefs
+            Toggle("Hover previews", isOn: Binding(get: { p.wrappedValue.hoverHints ?? true }, set: { p.wrappedValue.hoverHints = $0 }))
+            if p.wrappedValue.hoverHints != false {
+                Dropdown("Show for", selection: Binding(get: { p.wrappedValue.hintScope ?? .everything }, set: { p.wrappedValue.hintScope = $0 }), options: HintScope.allCases.map { Opt($0.rawValue, $0) })
+                Dropdown("Preview shows", selection: Binding(get: { p.wrappedValue.hintStyle ?? .name }, set: { p.wrappedValue.hintStyle = $0 }), options: HintStyle.allCases.map { Opt($0.rawValue, $0) })
+            }
+        } header: { Text("Hover previews") } footer: {
+            Text("A short label when you hover over a button.").font(.caption).foregroundStyle(.secondary)
+        }
     }
 }
 
@@ -156,7 +166,7 @@ struct TasksPage: View {
     private func row(_ t: TaskItem) -> some View {
         HStack(spacing: 10) {
             Button { store.toggleDone(t) } label: { Image(systemName: t.done ? "checkmark.circle.fill" : "circle").foregroundStyle(t.done ? .green : (t.priority == 4 ? .red : t.priority == 3 ? .orange : .secondary)).font(.title3) }
-                .buttonStyle(.plain).accessibilityLabel(t.done ? "Mark not done" : "Mark done")
+                .buttonStyle(.plain).hint("Complete", does: t.done ? "Mark not done" : "Mark task done").accessibilityLabel(t.done ? "Mark not done" : "Mark done")
             VStack(alignment: .leading, spacing: 1) {
                 Text(t.title).strikethrough(t.done).lineLimit(2)
                 TaskMeta(t: t)
@@ -226,7 +236,7 @@ struct ViewOptions: View {
             }
         } label: { Image(systemName: "line.3.horizontal.decrease").font(.system(size: 12, weight: .medium)) }
         .toggleStyle(.automatic)   // the app-wide SwitchToggle can't draw in a menu: greys out the Pickers and Toggle, adds a blank row
-        .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize().help("View options").accessibilityLabel("View options")
+        .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize().hint("View options", does: "Group, sort, filter", important: true).accessibilityLabel("View options")
         .alert("Name this view", isPresented: $naming) {
             TextField("Name", text: $name)
             Button("Save") { var n = v; n.id = UUID(); n.name = name.isEmpty ? "View" : name; n.icon = icon; store.data.views = (store.data.views ?? []) + [n]; v = n }
@@ -259,7 +269,7 @@ struct TaskEditor: View {
                     HStack {
                         Button { if let u = Self.url(r) { openURL(u) } } label: { Label(r.hasPrefix("/") ? (r as NSString).lastPathComponent : r, systemImage: r.contains("drive.google") || r.contains("GoogleDrive") ? "externaldrive" : r.hasPrefix("/") ? "doc" : "link").lineLimit(1) }.buttonStyle(.plain)
                         Spacer()
-                        Button { task.resources?.removeAll { $0 == r } } label: { Image(systemName: "xmark") }.buttonStyle(.plain).accessibilityLabel("Remove")
+                        Button { task.resources?.removeAll { $0 == r } } label: { Image(systemName: "xmark") }.buttonStyle(.plain).hint("Remove", does: "Remove link").accessibilityLabel("Remove")
                     }
                 }
                 HStack {

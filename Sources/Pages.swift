@@ -348,7 +348,7 @@ struct WeekPage: View {
                     Button(dayMode ? "Today" : "This week") { start = Date().startOfDay }.buttonStyle(QuietButton()).disabled(isCurrent)
                     Spacer()
                     #if os(macOS)
-                    IconButton(icon: store.data.prefs.blockDuringFocus ? "shield.fill" : "shield", label: "Block distractions while focusing", on: store.data.prefs.blockDuringFocus) { store.data.prefs.blockDuringFocus.toggle() }
+                    IconButton(icon: store.data.prefs.blockDuringFocus ? "shield.fill" : "shield", label: "Block distractions while focusing", on: store.data.prefs.blockDuringFocus, does: "Block distractions", important: true) { store.data.prefs.blockDuringFocus.toggle() }
                     let planLabel = "Plan with Coach"
                     #else
                     let planLabel = "Plan"
@@ -356,7 +356,7 @@ struct WeekPage: View {
                     Button(planning ? "Planning…" : planLabel) {
                         planning = true; error = nil
                         Task { do { draft = DraftBox(draft: try await Coach.draftWeek()) } catch { self.error = error.localizedDescription }; planning = false }
-                    }.buttonStyle(PillButton()).disabled(planning)
+                    }.buttonStyle(PillButton()).disabled(planning).hint(planLabel, does: "Draft today's plan", important: true)
                 }
                 title
             }.padding(.horizontal, 14).frame(height: 54)
@@ -383,7 +383,7 @@ struct WeekPage: View {
         Button(action: action) {
             Image(systemName: icon).font(.system(size: 11, weight: .semibold)).frame(width: 28, height: 28)
                 .overlay(Circle().strokeBorder(Color.primary.opacity(0.12))).contentShape(.circle)
-        }.buttonStyle(.plain).accessibilityLabel(label)
+        }.buttonStyle(.plain).hint(label, important: true).accessibilityLabel(label)
     }
     @ViewBuilder private var title: some View {
         if dayMode {
@@ -755,7 +755,7 @@ struct FocusPage: View {
                                 Task { suggesting = true; defer { suggesting = false }
                                     if let t = try? await Coach.suggestFocus() { f.title = t.title; f.goalID = store.goals.first { $0.title == t.goal }?.id ?? f.goalID }
                                 }
-                            }.disabled(suggesting).help("Let the coach pick the best thing to focus on now")
+                            }.disabled(suggesting).hint("Suggest", does: "Pick next focus", important: true)
                             GoalPicker(goal: $f.goalID).labelsHidden().frame(width: 170)
                         }.frame(maxWidth: 520)
                     }
@@ -832,8 +832,8 @@ struct MusicCard: View {
             case .none: EmptyView()
             }
             HStack {
-                Button { music.toggle() } label: { Image(systemName: music.playing ? "pause.fill" : "play.fill") }.accessibilityLabel(music.playing ? "Pause" : "Play")
-                Button { music.next() } label: { Image(systemName: "forward.fill") }.accessibilityLabel("Next track")
+                Button { music.toggle() } label: { Image(systemName: music.playing ? "pause.fill" : "play.fill") }.hint(music.playing ? "Pause" : "Play", does: music.playing ? "Pause music" : "Play music").accessibilityLabel(music.playing ? "Pause" : "Play")
+                Button { music.next() } label: { Image(systemName: "forward.fill") }.hint("Next track", does: "Skip song").accessibilityLabel("Next track")
                 Text(music.nowPlaying).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 Spacer()
                 Bar(value: Binding(get: { s.data.prefs.musicVolume }, set: { music.setVolume($0) })).frame(width: 100).accessibilityLabel("Music volume")
@@ -891,11 +891,11 @@ struct CoachPage: View {
             HStack(spacing: 2) {
                 Text("Coach").font(.system(size: 15, weight: .semibold))
                 Spacer()
-                IconButton(icon: "target", label: "Turn into goals") { adopt() }.disabled(store.data.chat.isEmpty || busy)
-                IconButton(icon: "brain", label: "What the coach remembers") { showMemory.toggle() }
+                IconButton(icon: "target", label: "Turn into goals", does: "Create goals") { adopt() }.disabled(store.data.chat.isEmpty || busy)
+                IconButton(icon: "brain", label: "Memory", does: "Show coach memory") { showMemory.toggle() }
                     .popover(isPresented: $showMemory) { MemoryList().frame(width: 360, height: 420) }
-                IconButton(icon: "square.and.pencil", label: "New chat") { store.data.chat = [] }.disabled(store.data.chat.isEmpty)
-                if nav.side { IconButton(icon: "xmark", label: "Close coach") { nav.side = false } }
+                IconButton(icon: "square.and.pencil", label: "New chat", does: "Clear the chat", important: true) { store.data.chat = [] }.disabled(store.data.chat.isEmpty)
+                if nav.side { IconButton(icon: "xmark", label: "Close coach", does: "Hide coach") { nav.side = false } }
             }.padding(.horizontal, 14).frame(height: 50)
             ScrollViewReader { proxy in
                 ScrollView {
@@ -932,9 +932,9 @@ struct CoachPage: View {
                 TextField(transcribing ? "Transcribing…" : "Ask anything, or tell it what to change…", text: $nav.coachDraft, axis: .vertical).textFieldStyle(.plain).lineLimit(1...5)
                     .onSubmit { send() }.padding(.vertical, 6)
                 Button { toggleVoice() } label: { Image(systemName: voice.recording ? "stop.circle.fill" : "mic").foregroundStyle(voice.recording ? .red : .secondary).frame(width: 28, height: 28) }
-                    .buttonStyle(.plain).accessibilityLabel(voice.recording ? "Stop recording" : "Record a message").disabled(transcribing)
+                    .buttonStyle(.plain).hint(voice.recording ? "Stop" : "Dictate", does: voice.recording ? "Stop recording" : "Speak your message").accessibilityLabel(voice.recording ? "Stop recording" : "Record a message").disabled(transcribing)
                 Button { send() } label: { Image(systemName: "arrow.up").font(.callout.weight(.bold)).foregroundStyle(Color.onBrand).frame(width: 28, height: 28).background(Color.brand, in: .circle) }
-                    .buttonStyle(.plain).accessibilityLabel("Send").disabled(busy || nav.coachDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .buttonStyle(.plain).hint("Send", does: "Send message").accessibilityLabel("Send").disabled(busy || nav.coachDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             .padding(.leading, 16).padding(.trailing, 8).padding(.vertical, 6).surface(22)
             .padding(14).frame(maxWidth: 780)
@@ -1036,9 +1036,9 @@ struct JournalPage: View {
         @Bindable var s = store
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Button { day = day.adding(days: -1) } label: { Image(systemName: "chevron.left") }.accessibilityLabel("Previous day")
+                Button { day = day.adding(days: -1) } label: { Image(systemName: "chevron.left") }.hint("Previous day").accessibilityLabel("Previous day")
                 Text(day.formatted(date: .long, time: .omitted)).font(.headline)
-                Button { day = day.adding(days: 1) } label: { Image(systemName: "chevron.right") }.accessibilityLabel("Next day").disabled(Calendar.current.isDateInToday(day))
+                Button { day = day.adding(days: 1) } label: { Image(systemName: "chevron.right") }.hint("Next day").accessibilityLabel("Next day").disabled(Calendar.current.isDateInToday(day))
                 Spacer()
                 Toggle("Coach can read my journal", isOn: $s.data.prefs.coachReadsJournal).toggleStyle(CheckToggle())
             }
@@ -1479,7 +1479,7 @@ struct MemoryList: View {
                     ForEach(m.reversed(), id: \.self) { f in
                         HStack(alignment: .top) {
                             Text(f).font(.system(size: 13)).frame(maxWidth: .infinity, alignment: .leading)
-                            Button { store.data.memory?.removeAll { $0 == f } } label: { Image(systemName: "xmark") }.buttonStyle(.plain).foregroundStyle(.secondary).help("Forget")
+                            Button { store.data.memory?.removeAll { $0 == f } } label: { Image(systemName: "xmark") }.buttonStyle(.plain).foregroundStyle(.secondary).hint("Forget", does: "Remove this memory")
                         }
                     }
                 }

@@ -253,7 +253,7 @@ struct ReflectView: View {
                 .foregroundStyle(on ? Color.onBrand : .secondary)
                 .padding(.horizontal, 9).padding(.vertical, 4)
                 .background(on ? Color.brand : Color.primary.opacity(0.06), in: .capsule)
-        }.buttonStyle(.plain).help("\(e.rawValue.capitalized) (\(key))").accessibilityAddTraits(on ? .isSelected : [])
+        }.buttonStyle(.plain).hint("\(e.rawValue.capitalized) (\(key))").accessibilityAddTraits(on ? .isSelected : [])
     }
     private func mark(_ b: Block, _ d: Bool) -> some View {
         let on = b.done == d
@@ -261,7 +261,7 @@ struct ReflectView: View {
             Image(systemName: d ? "checkmark" : "xmark").font(.caption.weight(.bold)).frame(width: 26, height: 22)
                 .foregroundStyle(on ? Color.white : .secondary)
                 .background(on ? (d ? Color.good : Color.now) : Color.primary.opacity(0.06), in: .capsule)
-        }.buttonStyle(.plain).help(d ? "Done (Y)" : "Not done (N)").accessibilityLabel(d ? "Done" : "Not done").accessibilityAddTraits(on ? .isSelected : [])
+        }.buttonStyle(.plain).hint(d ? "Done (Y)" : "Not done (N)").accessibilityLabel(d ? "Done" : "Not done").accessibilityAddTraits(on ? .isSelected : [])
     }
     private func done(_ b: Block, _ d: Bool) {
         var b = b; b.done = b.done == d ? nil : d; store.updateBlock(b)

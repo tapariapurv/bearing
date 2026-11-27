@@ -143,6 +143,7 @@ struct Prefs: Codable {
     var onboarded: Bool?       // false while onboarding runs; nil for people from before it existed
     var emailTasks: Bool?, emailGoals: Bool?, emailNews: Bool?   // email opt-ins read by the server: tasks and goals default off, news on
     var agentAccess: [String: String]?, agentKey: String?, webKey: String?   // agent permissions per scope, the hosted MCP server's secret, the web app's secret
+    var hoverHints: Bool?, hintScope: HintScope?, hintStyle: HintStyle?   // hover previews: nil is on, everything, just the name
     var blockLength: Int { blockMinutes ?? 60 }
 }
 struct Profile: Codable, Hashable {
